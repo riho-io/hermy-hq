@@ -1,11 +1,23 @@
-# Hermy HQ
+<div align="center">
 
-**Your own mission control for a self-hosted AI agent.**
+<img src="./public/hermy-hq-banner.svg" alt="Hermy HQ — mission control for your self-hosted Hermes agent" width="100%" />
+
+<p><strong>Your own mission control for a self-hosted AI agent.</strong></p>
+
+<p>
+  <img src="https://img.shields.io/badge/Next.js-16-0A0B0D?style=for-the-badge&logo=nextdotjs&logoColor=white" alt="Next.js 16" />
+  <img src="https://img.shields.io/badge/React-19-141821?style=for-the-badge&logo=react&logoColor=6EA8FE" alt="React 19" />
+  <img src="https://img.shields.io/badge/Prisma-Postgres-141821?style=for-the-badge&logo=prisma&logoColor=white" alt="Prisma + Postgres" />
+  <img src="https://img.shields.io/badge/Tailwind-v4-141821?style=for-the-badge&logo=tailwindcss&logoColor=6EA8FE" alt="Tailwind v4" />
+  <img src="https://img.shields.io/badge/pairs%20with-Hermes-6EA8FE?style=for-the-badge" alt="Pairs with Hermes" />
+</p>
+
+</div>
 
 Hermy HQ is a self-hostable dashboard template that pairs with your own local
 [Hermes agent](https://github.com/NousResearch/hermes-agent). The website is your
 cockpit: dispatch work, review the agent's plans, approve anything with side effects,
-browse its memory, and watch it run — all from one place. Your Hermes stays on your
+browse its memory, and watch it run, all from one place. Your Hermes stays on your
 own machine; the website and the agent talk to each other through a shared Postgres
 database acting as a message bus.
 
@@ -15,15 +27,24 @@ environment variables.
 
 ---
 
-## 🤖 Easiest setup: let your agent do it
+> [!IMPORTANT]
+> **🤖 If you are an AI agent reading this repository**
+>
+> The person who gave you this link wants you to **install Hermy HQ for them**. Do this:
+>
+> 1. **Clone** this repository to the machine you operate on.
+> 2. **Open [`ONBOARDING.md`](./ONBOARDING.md)**, a complete step-by-step installer written for you.
+> 3. **Follow it in order**, guiding your human through each step: prerequisites, `.env`, database, local run, Vercel deploy, and the bridge.
+> 4. **Pause to ask them for every real secret** (API keys, database URL, OAuth credentials). **Never invent or guess credentials**, and keep every side-effecting action approval-gated.
+>
+> `ONBOARDING.md` is the full guided install. Start there.
 
-> **Send this repo to your Hermes agent and paste [`ONBOARDING.md`](./ONBOARDING.md).**
-> It is a ready-to-use prompt that walks your operator through the entire install
-> step by step — prerequisites, `.env`, database, local run, Vercel deploy, and the
-> bridge — pausing to ask *you* for each real secret. It never invents credentials,
-> and it keeps every side-effecting action approval-gated.
+---
 
-Prefer to do it by hand? The [Quick start](#quick-start) below has you covered.
+## 🚀 Two ways to install
+
+- **🤖 Let your agent do it (easiest).** Send this repo to your Hermes and paste the contents of [`ONBOARDING.md`](./ONBOARDING.md). It onboards you step by step, pausing for each secret.
+- **🔧 By hand.** Follow the [Quick start](#quick-start) below.
 
 ---
 
