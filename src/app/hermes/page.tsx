@@ -135,13 +135,13 @@ function columnTone(col: string): "neutral" | "up" | "down" | "warn" | "accent" 
   return "neutral";
 }
 const COLUMN_LABEL: Record<string, string> = {
-  triage: "Triage",
-  todo: "To do",
-  ready: "Ready",
-  running: "Running",
-  review: "Review",
-  blocked: "Blocked",
-  done: "Done",
+  triage: "Uus",
+  todo: "Ootel",
+  ready: "Valmis",
+  running: "Töös",
+  review: "Ülevaatusel",
+  blocked: "Blokeeritud",
+  done: "Valmis",
 };
 
 function levelColor(l: EvLevel): string {
@@ -177,7 +177,7 @@ function HealthChip({ health }: { health: Health | null }) {
         />
       </span>
       <span className="text-[12px] font-semibold">
-        {online ? "Online" : "Offline · bridge idle"}
+        {online ? "Ühendatud" : "Maas · bridge ootel"}
       </span>
       {health?.lastSeen && (
         <span className="num text-[10.5px] text-[var(--text-3)]">
@@ -217,15 +217,15 @@ function DispatchBar({ onDone }: { onDone: () => void }) {
         setText("");
         flash(
           side
-            ? "Sent to approval inbox — awaiting your go-ahead."
-            : "Queued for Hermes."
+            ? "Saadetud kinnitussisendisse — ootan sinu otsust."
+            : "Järjekorda pandud Hermesele."
         );
         onDone();
       } else {
-        flash("Dispatch failed. Try again.");
+        flash("Saatmine ebaõnnestus. Proovi uuesti.");
       }
     } catch {
-      flash("Dispatch failed. Try again.");
+      flash("Saatmine ebaõnnestus. Proovi uuesti.");
     } finally {
       setBusy(false);
     }
@@ -240,7 +240,7 @@ function DispatchBar({ onDone }: { onDone: () => void }) {
           onKeyDown={(e) => {
             if (e.key === "Enter") { e.preventDefault(); submit(); }
           }}
-          placeholder="Ask or tell Hermes to do something…"
+          placeholder="Küsi või ütle Hermesele, mida teha…"
           className="flex-1 min-w-0 bg-transparent text-[14px] text-[var(--text)] placeholder:text-[var(--text-3)] px-3.5 py-2.5 rounded-[10px] border border-[var(--line)] focus:border-[color-mix(in_srgb,var(--accent)_45%,transparent)] outline-none transition-colors"
         />
         <div className="flex items-center gap-3 shrink-0">
@@ -437,13 +437,13 @@ function TaskBoard({
   return (
     <>
       <SectionHeader
-        label="Task board"
-        title="Hermes kanban"
+        label="Ülesandelaud"
+        title="Hermese kanban"
         action={
           <div className="flex items-center gap-3">
-            <span className="num text-[12px] text-[var(--text-2)]">{total} total</span>
+            <span className="num text-[12px] text-[var(--text-2)]">{total} kokku</span>
             <span className="num text-[11px] text-[var(--text-3)]">
-              synced {timeAgo(lastSync)}
+              sünkroonitud {timeAgo(lastSync)}
             </span>
           </div>
         }
@@ -452,8 +452,8 @@ function TaskBoard({
         <Panel className="p-2">
           <EmptyState
             icon={<LayoutGrid className="w-6 h-6" />}
-            title="No tasks on the board"
-            hint="Dispatched work and synced kanban cards will show up here."
+            title="Laual pole ülesandeid"
+            hint="Saadetud töö ja sünkroonitud kanban-kaardid ilmuvad siia."
           />
         </Panel>
       ) : (
@@ -529,10 +529,10 @@ function CronPanel({ jobs, syncedAt, onDone }: { jobs: CronJob[]; syncedAt: stri
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      setNote(r.ok ? ok : "Request failed.");
+      setNote(r.ok ? ok : "Päring ebaõnnestus.");
       if (r.ok) onDone();
     } catch {
-      setNote("Request failed.");
+      setNote("Päring ebaõnnestus.");
     } finally {
       setBusy(false);
     }
@@ -542,7 +542,7 @@ function CronPanel({ jobs, syncedAt, onDone }: { jobs: CronJob[]; syncedAt: stri
     if (!schedule.trim() || !prompt.trim()) return;
     post(
       { op: "create", schedule: schedule.trim(), prompt: prompt.trim() },
-      "Schedule sent to Hermes."
+      "Graafik saadetud Hermesele."
     ).then(() => {
       setSchedule("");
       setPrompt("");
@@ -550,7 +550,7 @@ function CronPanel({ jobs, syncedAt, onDone }: { jobs: CronJob[]; syncedAt: stri
   };
   const runNow = () => {
     if (!runName.trim()) return;
-    post({ op: "run", name: runName.trim() }, "Run-now sent to Hermes.").then(() =>
+    post({ op: "run", name: runName.trim() }, "Kohene käivitus saadetud Hermesele.").then(() =>
       setRunName("")
     );
   };
@@ -558,11 +558,11 @@ function CronPanel({ jobs, syncedAt, onDone }: { jobs: CronJob[]; syncedAt: stri
   return (
     <>
       <SectionHeader
-        label="Cron · schedules"
-        title="Recurring jobs"
+        label="Cron · graafikud"
+        title="Korduvad tööd"
         action={
           <span className="num text-[11px] text-[var(--text-3)]">
-            synced {timeAgo(syncedAt)}
+            sünkroonitud {timeAgo(syncedAt)}
           </span>
         }
       />
@@ -570,14 +570,14 @@ function CronPanel({ jobs, syncedAt, onDone }: { jobs: CronJob[]; syncedAt: stri
         {/* Schedules */}
         <Panel className="p-5">
           <div className="flex items-center justify-between mb-3">
-            <Eyebrow>schedules</Eyebrow>
+            <Eyebrow>graafikud</Eyebrow>
             <span className="num text-[10.5px] text-[var(--text-3)]">
-              {jobs.length} job{jobs.length === 1 ? "" : "s"}
+              {jobs.length} töö{jobs.length === 1 ? "" : "d"}
             </span>
           </div>
           {jobs.length === 0 ? (
             <p className="text-[13px] text-[var(--text-3)] py-6 text-center">
-              No schedules yet.
+              Graafikuid pole veel.
             </p>
           ) : (
             <div className="flex flex-col gap-2 max-h-[440px] overflow-auto -mx-1 px-1">
@@ -622,19 +622,19 @@ function CronPanel({ jobs, syncedAt, onDone }: { jobs: CronJob[]; syncedAt: stri
         <Panel className="p-5">
           <div className="space-y-4">
             <div>
-              <Eyebrow className="!mb-2 block">New schedule</Eyebrow>
+              <Eyebrow className="!mb-2 block">Uus graafik</Eyebrow>
               <div className="space-y-2.5">
                 <input
                   value={schedule}
                   onChange={(e) => setSchedule(e.target.value)}
-                  placeholder="Schedule (e.g. 0 9 * * 1)"
+                  placeholder="Graafik (nt 0 9 * * 1)"
                   className="w-full bg-transparent num text-[13px] text-[var(--text)] placeholder:text-[var(--text-3)] px-3 py-2 rounded-[8px] border border-[var(--line)] outline-none focus:border-[color-mix(in_srgb,var(--accent)_45%,transparent)]"
                 />
                 <textarea
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   rows={2}
-                  placeholder="Prompt — what should Hermes do on this cadence?"
+                  placeholder="Käsk — mida peaks Hermes sellel intervallil tegema?"
                   className="w-full bg-transparent text-[13px] text-[var(--text-2)] placeholder:text-[var(--text-3)] px-3 py-2 rounded-[8px] border border-[var(--line)] outline-none focus:border-[color-mix(in_srgb,var(--accent)_45%,transparent)] resize-y"
                 />
                 <Button
@@ -644,7 +644,7 @@ function CronPanel({ jobs, syncedAt, onDone }: { jobs: CronJob[]; syncedAt: stri
                   disabled={busy || !schedule.trim() || !prompt.trim()}
                 >
                   <Clock className="w-3.5 h-3.5" />
-                  Create schedule
+                  Loo graafik
                 </Button>
               </div>
             </div>
@@ -652,18 +652,18 @@ function CronPanel({ jobs, syncedAt, onDone }: { jobs: CronJob[]; syncedAt: stri
             <div className="rule" />
 
             <div>
-              <Eyebrow className="!mb-2 block">Run now</Eyebrow>
+              <Eyebrow className="!mb-2 block">Käivita kohe</Eyebrow>
               <div className="flex items-center gap-2.5">
                 <input
                   value={runName}
                   onChange={(e) => setRunName(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); runNow(); } }}
-                  placeholder="Job name"
+                  placeholder="Töö nimi"
                   className="flex-1 min-w-0 bg-transparent text-[13px] text-[var(--text)] placeholder:text-[var(--text-3)] px-3 py-2 rounded-[8px] border border-[var(--line)] outline-none focus:border-[color-mix(in_srgb,var(--accent)_45%,transparent)]"
                 />
                 <Button variant="ghost" size="sm" onClick={runNow} disabled={busy || !runName.trim()}>
                   <Zap className="w-3.5 h-3.5" />
-                  Run now
+                  Käivita kohe
                 </Button>
               </div>
             </div>
@@ -685,13 +685,13 @@ function CronPanel({ jobs, syncedAt, onDone }: { jobs: CronJob[]; syncedAt: stri
 function ActivityFeed({ events }: { events: Ev[] }) {
   return (
     <>
-      <SectionHeader label="Activity" title="Recent events" />
+      <SectionHeader label="Tegevus" title="Hiljutised sündmused" />
       {events.length === 0 ? (
         <Panel className="p-2">
           <EmptyState
             icon={<ActivityIcon className="w-6 h-6" />}
-            title="No recent activity"
-            hint="Events from Hermes and its agents will stream in here."
+            title="Hiljutist tegevust pole"
+            hint="Hermese ja tema agentide sündmused voogavad siia."
           />
         </Panel>
       ) : (
@@ -794,7 +794,7 @@ export default function HermesPage() {
         {/* Header */}
         <div className="hq-rise pt-4 pb-8 flex items-end justify-between gap-4">
           <div>
-            <Eyebrow>Agent runtime</Eyebrow>
+            <Eyebrow>Agendi mootor</Eyebrow>
             <h1 className="mt-2.5 text-[40px] font-semibold tracking-[-0.025em] leading-none text-[var(--text)]">
               Hermes
             </h1>
@@ -825,13 +825,13 @@ export default function HermesPage() {
         {/* Approval inbox */}
         <section className="mt-12">
           <SectionHeader
-            label="Approval inbox"
-            title="Awaiting approval"
+            label="Kinnitussisend"
+            title="Ootab kinnitust"
             action={
               pending > 0 ? (
-                <Pill tone="warn">{pending} pending</Pill>
+                <Pill tone="warn">{pending} ootel</Pill>
               ) : (
-                <span className="num text-[11px] text-[var(--text-3)]">clear</span>
+                <span className="num text-[11px] text-[var(--text-3)]">puhas</span>
               )
             }
           />
@@ -844,8 +844,8 @@ export default function HermesPage() {
             <Panel className="p-2">
               <EmptyState
                 icon={<Inbox className="w-6 h-6" />}
-                title="Nothing awaiting approval."
-                hint="Side-effecting dispatches land here for a one-tap approve."
+                title="Kinnitust ootavaid asju pole."
+                hint="Külgmõjuga saadetised jõuavad siia ühe klõpsuga kinnitamiseks."
               />
             </Panel>
           ) : (
@@ -861,7 +861,7 @@ export default function HermesPage() {
         <section className="mt-12">
           {!loaded ? (
             <>
-              <SectionHeader label="Task board" title="Hermes kanban" />
+              <SectionHeader label="Ülesandelaud" title="Hermese kanban" />
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <Skeleton className="h-48" />
                 <Skeleton className="h-48" />
@@ -877,7 +877,7 @@ export default function HermesPage() {
         <section className="mt-12">
           {!loaded ? (
             <>
-              <SectionHeader label="Cron · schedules" title="Recurring jobs" />
+              <SectionHeader label="Cron · graafikud" title="Korduvad tööd" />
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <Skeleton className="h-56" />
                 <Skeleton className="h-56" />
@@ -892,7 +892,7 @@ export default function HermesPage() {
         <section className="mt-12">
           {!loaded ? (
             <>
-              <SectionHeader label="Activity" title="Recent events" />
+              <SectionHeader label="Tegevus" title="Hiljutised sündmused" />
               <Skeleton className="h-64" />
             </>
           ) : (

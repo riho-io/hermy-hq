@@ -22,46 +22,46 @@ import {
 
 const navGroups = [
   {
-    name: "Overview",
+    name: "Ülevaade",
     items: [
-      { href: "/", label: "Dashboard", icon: Home },
+      { href: "/", label: "Töölaud", icon: Home },
       { href: "/hermes", label: "Hermes", icon: Cpu },
-      { href: "/tasks", label: "Tasks", icon: ClipboardList },
+      { href: "/tasks", label: "Ülesanded", icon: ClipboardList },
     ],
   },
   {
-    name: "Content",
+    name: "Sisu",
     items: [
       { href: "/x", label: "X", icon: Twitter },
-      { href: "/content-os", label: "Pipeline", icon: Workflow },
-      { href: "/articles", label: "Articles", icon: FileText },
+      { href: "/content-os", label: "Voog", icon: Workflow },
+      { href: "/articles", label: "Artiklid", icon: FileText },
       { href: "/youtube", label: "YouTube", icon: Play },
     ],
   },
   {
-    name: "Data",
+    name: "Andmed",
     items: [
-      { href: "/client-pulse", label: "Client Pulse", icon: HeartPulse },
+      { href: "/client-pulse", label: "Kliendimonitor", icon: HeartPulse },
     ],
   },
   {
-    name: "System",
+    name: "Süsteem",
     items: [
-      { href: "/agents", label: "Agents", icon: Bot },
-      { href: "/memory-wiki", label: "Memory Wiki", icon: BookOpen },
-      { href: "/ideas", label: "Ideas", icon: Lightbulb },
-      { href: "/garden", label: "Garden", icon: Flower2 },
+      { href: "/agents", label: "Agendid", icon: Bot },
+      { href: "/memory-wiki", label: "Mäluviki", icon: BookOpen },
+      { href: "/ideas", label: "Ideed", icon: Lightbulb },
+      { href: "/garden", label: "Aed", icon: Flower2 },
     ],
   },
 ];
 
 // Mobile tab bar - only show the 5 most important
 const mobileTabsRaw = [
-  { href: "/", label: "Dashboard", icon: Home },
+  { href: "/", label: "Töölaud", icon: Home },
   { href: "/x", label: "X", icon: Twitter },
   { href: "/youtube", label: "YouTube", icon: Play },
-  { href: "/ideas", label: "Ideas", icon: Lightbulb },
-  { href: "/agents", label: "Agents", icon: Bot },
+  { href: "/ideas", label: "Ideed", icon: Lightbulb },
+  { href: "/agents", label: "Agendid", icon: Bot },
 ];
 
 export function Sidebar() {

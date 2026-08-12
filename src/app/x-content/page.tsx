@@ -75,7 +75,7 @@ function TrendRadarSection() {
       {/* Header row */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="text-[12px] text-[var(--text-3)]">
-          {trendsData?.lastUpdated ? `Updated ${formatTimeAgo(Math.floor((Date.now() - new Date(trendsData.lastUpdated).getTime()) / 60000))}` : "No data yet"}
+          {trendsData?.lastUpdated ? `Uuendatud ${formatTimeAgo(Math.floor((Date.now() - new Date(trendsData.lastUpdated).getTime()) / 60000))}` : "Andmeid pole veel"}
           {" · "}
           <span className="num text-[var(--text-2)]">{filtered.length} signal{filtered.length !== 1 ? "s" : ""}</span>
         </div>
@@ -96,7 +96,7 @@ function TrendRadarSection() {
 
       {/* Trend cards */}
       {filtered.length === 0 ? (
-        <EmptyState title="No fresh signals right now" hint="Radar updates every 15 min." />
+        <EmptyState title="Värskeid signaale pole praegu" hint="Radar uueneb iga 15 minuti järel." />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map(trend => {
@@ -152,16 +152,16 @@ export async function fetchDrafts() {
 }
 
 const TIME_SLOTS = [
-  { label: "Morning (9:00)", value: "09:00" },
-  { label: "Midday (12:00)", value: "12:00" },
-  { label: "Afternoon (15:00)", value: "15:00" },
-  { label: "Evening (18:00)", value: "18:00" },
+  { label: "Hommik (9:00)", value: "09:00" },
+  { label: "Keskpäev (12:00)", value: "12:00" },
+  { label: "Pärastlõuna (15:00)", value: "15:00" },
+  { label: "Õhtu (18:00)", value: "18:00" },
   { label: "Night (21:00)", value: "21:00" }
 ];
 
 const REJECT_REASONS = [
-  "Too AI", "Too Vague", "No Value",
-  "Inaccurate", "Not My Voice", "Boring"
+  "Liiga AI", "Liiga üldine", "Pole väärtust",
+  "Ebatäpne", "Pole minu hääl", "Igav"
 ];
 
 interface WeekDay {
@@ -357,11 +357,11 @@ const DraftCard = memo(function DraftCard({
               onClick={() => onLightbox(draft.visualUrl || null)} />
             <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
               <button className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--surface-1)]/90 text-[var(--text-2)] hover:text-[var(--text)]"
-                onClick={() => { navigator.clipboard.writeText(draft.visualUrl || ""); }}>Copy HD</button>
+                onClick={() => { navigator.clipboard.writeText(draft.visualUrl || ""); }}>Kopeeri HD</button>
               <button className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--surface-1)]/90 text-[var(--text-2)] hover:text-[var(--text)]"
-                onClick={async () => { await onRemoveVisual(draft.id); await onGenerateVisual(draft.id); }}>Regenerate</button>
+                onClick={async () => { await onRemoveVisual(draft.id); await onGenerateVisual(draft.id); }}>Genereeri uuesti</button>
               <button className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--surface-1)]/90 text-[var(--down)] hover:brightness-110"
-                onClick={() => onRemoveVisual(draft.id)}>Remove</button>
+                onClick={() => onRemoveVisual(draft.id)}>Eemalda</button>
             </div>
           </div>
         ) : null}
@@ -673,7 +673,7 @@ export default function XContentPage() {
     fileInput.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
-      if (file.size > 10 * 1024 * 1024) { alert("File too large. Max 10MB."); return; }
+      if (file.size > 10 * 1024 * 1024) { alert("Fail liiga suur. Maks 10MB."); return; }
       const formData = new FormData();
       formData.append("draftId", draftId); formData.append("file", file);
       try { await fetch("/api/x-content/visual", { method: "POST", body: formData }); loadDrafts(); }

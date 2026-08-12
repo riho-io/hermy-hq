@@ -118,13 +118,13 @@ const STATUS_TONE: Record<RunStatus, Tone> = {
   rejected: "neutral",
 };
 const STATUS_LABEL: Record<RunStatus, string> = {
-  queued: "Queued",
-  awaiting_approval: "Awaiting approval",
-  approved: "Approved",
-  running: "Running",
-  done: "Done",
-  failed: "Failed",
-  rejected: "Rejected",
+  queued: "Järjekorras",
+  awaiting_approval: "Ootab kinnitust",
+  approved: "Kinnitatud",
+  running: "Töös",
+  done: "Valmis",
+  failed: "Ebaõnnestus",
+  rejected: "Tagasi lükatud",
 };
 function toneVar(t: Tone): string {
   return t === "neutral" ? "var(--text-3)" : `var(--${t})`;
@@ -180,19 +180,19 @@ function UsageStrip({ cost }: { cost: Cost | null }) {
     <Panel className="p-5">
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
         <div>
-          <Eyebrow>Total cost</Eyebrow>
+          <Eyebrow>Kogukulu</Eyebrow>
           <div className="num font-semibold text-[26px] tracking-[-0.02em] text-[var(--text)] leading-none mt-2">
             {cost?.totalCost != null ? fmtUsd(cost.totalCost) : "—"}
           </div>
         </div>
         <div>
-          <Eyebrow>Total tokens</Eyebrow>
+          <Eyebrow>Tokenid kokku</Eyebrow>
           <div className="num font-semibold text-[26px] tracking-[-0.02em] text-[var(--text)] leading-none mt-2">
             {cost?.totalTokens != null ? fmtTokens(cost.totalTokens) : "—"}
           </div>
         </div>
         <div>
-          <Eyebrow>Synced</Eyebrow>
+          <Eyebrow>Sünkroonitud</Eyebrow>
           <div className="num text-[13px] text-[var(--text-2)] mt-2.5">
             {timeAgo(cost?.syncedAt ?? null)}
           </div>
@@ -207,7 +207,7 @@ function UsageStrip({ cost }: { cost: Cost | null }) {
 
       {byModel.length > 0 && (
         <div className="mt-5 pt-4 border-t border-[var(--line)] flex flex-col gap-2.5">
-          <Eyebrow>By model</Eyebrow>
+          <Eyebrow>Mudelite lõikes</Eyebrow>
           {byModel.map((m) => {
             const val = magnitude(m);
             const pct = Math.max(3, Math.round((val / max) * 100));
@@ -327,8 +327,8 @@ function RunHistory({
   return (
     <>
       <SectionHeader
-        label="Run history"
-        title="Recent runs"
+        label="Käivituste ajalugu"
+        title="Hiljutised käivitused"
         action={
           <div className="flex items-center gap-1 rounded-lg border border-[var(--line)] p-0.5">
             {FILTERS.map((f) => {
@@ -360,8 +360,8 @@ function RunHistory({
         <Panel className="p-2">
           <EmptyState
             icon={<Activity className="w-6 h-6" />}
-            title={filter === "all" ? "No runs yet" : `No ${filter} runs`}
-            hint="Runs dispatched to Hermes will show up here with duration and results."
+            title={filter === "all" ? "Käivitusi pole veel" : `Pole ${filter} käivitusi`}
+            hint="Hermesele saadetud käivitused ilmuvad siia kestuse ja tulemustega."
           />
         </Panel>
       ) : (
@@ -409,9 +409,9 @@ export function HermesRuns() {
   return (
     <div className="flex flex-col gap-8">
       <div>
-        <Eyebrow>Observability</Eyebrow>
+        <Eyebrow>Jälgitavus</Eyebrow>
         <h2 className="mt-2 text-[24px] font-semibold tracking-[-0.02em] leading-none text-[var(--text)]">
-          Runs &amp; usage
+          Käivitused &amp; kasutus
         </h2>
       </div>
 

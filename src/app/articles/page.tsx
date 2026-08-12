@@ -57,7 +57,7 @@ const TRACK_CONFIG: Record<Track, { emoji: string; label: string; description: s
   "local-viral": {
     emoji: "🟡",
     label: "Local Viral",
-    description: "Claude features, AI tools, builder niche. Viral in our community.",
+    description: "Claude funktsioonid, AI tööriistad, ehitusnišš. Levib meie kogukonnas.",
     color: "text-[var(--text)]",
     bgColor: "bg-[var(--surface-2)]",
     borderColor: "border-[var(--line)]",
@@ -334,13 +334,13 @@ function ArticlesPageContent() {
       } else {
         setChatMessages(prev => [
           ...prev,
-          { role: "assistant", content: "Something went wrong. Try again." },
+          { role: "assistant", content: "Midagi läks valesti. Proovi uuesti." },
         ]);
       }
     } catch {
       setChatMessages(prev => [
         ...prev,
-        { role: "assistant", content: "Network error. Try again." },
+        { role: "assistant", content: "Võrguviga. Proovi uuesti." },
       ]);
     } finally {
       setChatLoading(false);
@@ -412,7 +412,7 @@ function ArticlesPageContent() {
   };
 
   const handleDeleteArticle = async (id: string) => {
-    if (!confirm("Delete this article?")) return;
+    if (!confirm("Kustuta see artikkel?")) return;
     try {
       const res = await fetch("/api/articles", {
         method: "DELETE",
@@ -821,7 +821,7 @@ function ComposeTab({
                 <span className="animate-spin">⏳</span> Generating...
               </>
             ) : (
-              <>Generate Titles →</>
+              <>Genereeri pealkirjad →</>
             )}
           </button>
         </div>
@@ -867,7 +867,7 @@ function ComposeTab({
                         onRemoveSavedTitle(saved.id);
                       }}
                       className="absolute top-3 right-3 text-[var(--text-4)] hover:text-[var(--down)] transition text-sm"
-                      title="Remove saved title"
+                      title="Eemalda salvestatud pealkiri"
                     >
                       ×
                     </button>
@@ -910,7 +910,7 @@ function ComposeTab({
                             ? "text-[var(--warn)] cursor-default"
                             : "text-[var(--text-4)] hover:text-[var(--warn)]"
                         }`}
-                        title={isSaved ? "Already saved" : "Save for later"}
+                        title={isSaved ? "Juba salvestatud" : "Salvesta hilisemaks"}
                         disabled={isSaved}
                       >
                         {isSaved ? "★" : "☆"}
@@ -1008,7 +1008,7 @@ function ComposeTab({
                       disabled={generatingQT}
                       className="btn-ghost px-4 py-2 text-[13px] disabled:opacity-50"
                     >
-                      {generatingQT ? "Generating QT..." : "Generate QT Tweet"}
+                      {generatingQT ? "Genereerin QT...": "Genereeri QT-tweet"}
                     </button>
                   )}
                 </div>

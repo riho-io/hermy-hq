@@ -293,16 +293,16 @@ function TopPerformers({ posted }: { posted: Draft[] }) {
   return (
     <>
       <SectionHeader
-        label="What worked"
-        title="Top performers"
+        label="Mis töötas"
+        title="Parimad esinejad"
         action={<span className="num text-[11px] text-[var(--text-3)]">by views</span>}
       />
       {ranked.length === 0 ? (
         <Panel className="p-2">
           <EmptyState
             icon={<Trophy className="w-6 h-6" />}
-            title="No view data yet"
-            hint="Posted tweets with metrics will rank here — the feedback loop for what to make more of."
+            title="Vaatamisandmeid pole veel"
+            hint="Postitatud tweetid mõõdikutega järjestuvad siia — tagasiside, mida rohkem teha."
           />
         </Panel>
       ) : (
@@ -436,7 +436,7 @@ export default function ContentOSPage() {
         {/* Header */}
         <div className="hq-rise pt-4 pb-8 flex items-end justify-between gap-4 flex-wrap">
           <div>
-            <Eyebrow>Content OS</Eyebrow>
+            <Eyebrow>Sisu OS</Eyebrow>
             <h1 className="mt-2.5 text-[40px] font-semibold tracking-[-0.025em] leading-none text-[var(--text)]">
               X Pipeline
             </h1>
@@ -456,10 +456,10 @@ export default function ContentOSPage() {
 
         {/* Summary chips */}
         <div className="hq-rise flex flex-wrap gap-3">
-          <StatChip label="In ideas" value={loaded ? String(stats.pending) : "—"} tone="warn" />
+          <StatChip label="Ideedes" value={loaded ? String(stats.pending) : "—"} tone="warn" />
           <StatChip label="Scheduled" value={loaded ? String(stats.scheduled) : "—"} tone="accent" />
-          <StatChip label="Posted this week" value={loaded ? String(stats.postedThisWeek) : "—"} tone="up" />
-          <StatChip label="Views this week" value={loaded ? fmt(stats.viewsThisWeek) : "—"} tone="accent" />
+          <StatChip label="Postitatud sel nädalal" value={loaded ? String(stats.postedThisWeek) : "—"} tone="up" />
+          <StatChip label="Vaatamisi sel nädalal" value={loaded ? fmt(stats.viewsThisWeek) : "—"} tone="accent" />
         </div>
 
         {/* Error */}
@@ -468,7 +468,7 @@ export default function ContentOSPage() {
             <Panel className="p-2">
               <EmptyState
                 title="Couldn't load the pipeline"
-                hint={error === "401" ? "Session expired — sign back in." : `Error ${error}. It will retry automatically.`}
+                hint={error === "401" ? "Seanss aegus — logi uuesti sisse." : `Viga ${error}. Proovib automaatselt uuesti.`}
                 action={
                   <button onClick={manualRefresh} className="btn-ghost px-4 py-2 text-[13px]">
                     Retry
@@ -506,7 +506,7 @@ export default function ContentOSPage() {
         <section className="mt-14">
           {!loaded ? (
             <>
-              <SectionHeader label="What worked" title="Top performers" />
+              <SectionHeader label="Mis töötas" title="Parimad esinejad" />
               <Skeleton className="h-64" />
             </>
           ) : (

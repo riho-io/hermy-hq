@@ -492,9 +492,9 @@ function EntryEditor({
       <div className="elevated relative w-full max-w-md h-full overflow-y-auto p-6 animate-[hq-rise_0.3s_ease]">
         <div className="flex items-start justify-between gap-4 mb-6">
           <div>
-            <Eyebrow>{isNew ? "New memory" : "Edit memory"}</Eyebrow>
+            <Eyebrow>{isNew ? "Uus mälu" : "Muuda mälu"}</Eyebrow>
             <h2 className="mt-1.5 text-[22px] font-semibold tracking-[-0.02em] text-[var(--text)]">
-              {isNew ? "Add entry" : "Correct entry"}
+              {isNew ? "Lisa kirje" : "Paranda kirjet"}
             </h2>
           </div>
           <button
@@ -533,7 +533,7 @@ function EntryEditor({
               <input
                 value={d.title}
                 onChange={(e) => set("title", e.target.value)}
-                placeholder="What should Hermes remember?"
+                placeholder="Mida peaks Hermes meeles pidama?"
                 className={inputCls}
                 autoFocus
               />
@@ -686,7 +686,7 @@ export default function MemoryWikiPage() {
         {/* Header */}
         <div className="hq-rise pt-4 pb-8 flex flex-col sm:flex-row sm:items-end justify-between gap-5">
           <div>
-            <Eyebrow>Hermes memory</Eyebrow>
+            <Eyebrow>Hermese mälu</Eyebrow>
             <h1 className="mt-2.5 text-[40px] font-semibold tracking-[-0.025em] leading-none text-[var(--text)]">
               Memory Wiki
             </h1>
@@ -714,7 +714,7 @@ export default function MemoryWikiPage() {
               <input
                 value={qInput}
                 onChange={(e) => setQInput(e.target.value)}
-                placeholder="Search memory — titles, bodies, tags…"
+                placeholder="Otsi mälust — pealkirjad, sisu, sildid…"
                 className="w-full bg-transparent text-[14px] text-[var(--text)] placeholder:text-[var(--text-3)] pl-10 pr-3.5 py-2.5 rounded-[10px] border border-[var(--line)] focus:border-[color-mix(in_srgb,var(--accent)_45%,transparent)] outline-none transition-colors"
               />
             </div>
@@ -748,7 +748,7 @@ export default function MemoryWikiPage() {
           {/* Type filter chips */}
           <div className="flex items-center gap-2 flex-wrap">
             <TypeChip
-              label="All"
+              label="Kõik"
               count={total}
               active={typeFilter === "all"}
               onClick={() => setTypeFilter("all")}
@@ -782,13 +782,13 @@ export default function MemoryWikiPage() {
                 icon={<BookOpen className="w-6 h-6" />}
                 title={
                   q || typeFilter !== "all"
-                    ? "No matching entries"
-                    : "No memory synced yet"
+                    ? "Sobivaid kirjeid pole"
+                    : "Mälu pole veel sünkroonitud"
                 }
                 hint={
                   q || typeFilter !== "all"
-                    ? "Try a different search or clear the filters."
-                    : "Once the Hermes bridge is running with a ~/.hermes/wiki, entries appear here."
+                    ? "Proovi teistsugust otsingut või eemalda filtrid."
+                    : "Kui Hermese bridge töötab koos ~/.hermes/wiki kaustaga, ilmuvad kirjed siia."
                 }
                 action={
                   q || typeFilter !== "all" ? (

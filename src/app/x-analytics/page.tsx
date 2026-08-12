@@ -89,16 +89,16 @@ export default function XAnalyticsPage() {
     r >= 3 ? "var(--up)" : r >= 1 ? "var(--warn)" : "var(--text-3)";
 
   const stats = [
-    { label: "Tweets Tracked", value: tweets.length.toString() },
-    { label: "Total Views", value: fmt(totalViews) },
-    { label: "Avg Eng Rate", value: `${avgEng}%` },
-    { label: "Top Tweet", value: fmt(topViews) + " views" },
+    { label: "Jälgitud tweetid", value: tweets.length.toString() },
+    { label: "Vaatamisi kokku", value: fmt(totalViews) },
+    { label: "Keskmine seot.", value: `${avgEng}%` },
+    { label: "Parim tweet", value: fmt(topViews) + " vaatamist" },
   ];
 
   return (
     <div className="space-y-10 pb-8">
       {/* Header */}
-      <SectionHeader label="X Analytics" title="Tweet performance & posting insights" />
+      <SectionHeader label="X analüütika" title="Tweetide jõudlus ja postitamise teadmised" />
 
       {loading ? (
         <div className="space-y-10">
@@ -191,7 +191,7 @@ export default function XAnalyticsPage() {
                   </div>
                 ))}
                 {tweets.length === 0 && (
-                  <EmptyState title="No tweet data yet" hint="Performance shows up here once tweets are tracked." />
+                  <EmptyState title="Tweetide andmeid pole veel" hint="Jõudlus ilmub siia, kui tweetid on jälgitud." />
                 )}
               </div>
             </div>
@@ -226,7 +226,7 @@ export default function XAnalyticsPage() {
                           key={h}
                           className="w-5 h-5 rounded-sm shrink-0"
                           style={{ background: cellColor(cell?.avgViews || 0) }}
-                          title={cell ? `${cell.count} tweet${cell.count > 1 ? "s" : ""}, avg ${fmt(cell.avgViews)} views` : "No data"}
+                          title={cell ? `${cell.count} tweet${cell.count > 1 ? "i" : ""}, keskm. ${fmt(cell.avgViews)} vaatamist` : "Pole andmeid"}
                         />
                       );
                     })}

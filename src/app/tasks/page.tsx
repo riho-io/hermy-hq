@@ -13,10 +13,10 @@ interface Task {
 }
 
 const columns = [
-  { id: "Not started", label: "To Do" },
-  { id: "Approved", label: "Approved" },
-  { id: "In progress", label: "In Progress" },
-  { id: "Done", label: "Done" },
+  { id: "Not started", label: "Ootel" },
+  { id: "Approved", label: "Kinnitatud" },
+  { id: "In progress", label: "Töös" },
+  { id: "Done", label: "Valmis" },
 ];
 
 export default function TasksPage() {
@@ -113,7 +113,7 @@ export default function TasksPage() {
               type="text"
               value={newTask}
               onChange={(e) => setNewTask(e.target.value)}
-              placeholder="What needs to be done?"
+              placeholder="Mida tuleb teha?"
               className="w-full bg-[var(--surface-1)] border border-[var(--line)] text-[var(--text)] placeholder-[var(--text-3)] rounded-[var(--r-md)] px-4 py-3 mb-3 text-[14px] focus:outline-none focus:border-[var(--line-strong)]"
               onKeyDown={(e) => e.key === "Enter" && addTask()}
               autoFocus

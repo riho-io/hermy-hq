@@ -20,19 +20,19 @@ interface Idea {
 type Tone = "neutral" | "up" | "down" | "warn" | "accent";
 
 const STATUS_CONFIG: Record<string, { label: string; tone: Tone }> = {
-  new:           { label: "New",         tone: "accent" },
-  considering:   { label: "Considering", tone: "warn" },
-  approved:      { label: "Approved",    tone: "up" },
-  "in-progress": { label: "In Progress", tone: "accent" },
-  done:          { label: "Done",        tone: "up" },
-  rejected:      { label: "Rejected",    tone: "down" },
+  new:           { label: "Uus",         tone: "accent" },
+  considering:   { label: "Kaalumisel", tone: "warn" },
+  approved:      { label: "Kinnitatud",    tone: "up" },
+  "in-progress": { label: "Töös", tone: "accent" },
+  done:          { label: "Valmis",        tone: "up" },
+  rejected:      { label: "Tagasi lükatud",    tone: "down" },
 };
 
 const CATEGORY_CONFIG: Record<string, { label: string }> = {
-  build:      { label: "Build" },
-  content:    { label: "Content" },
-  feature:    { label: "Feature" },
-  thread:     { label: "Thread" },
+  build:      { label: "Ehitus" },
+  content:    { label: "Sisu" },
+  feature:    { label: "Funktsioon" },
+  thread:     { label: "Lõim" },
   experiment: { label: "Experiment" },
 };
 

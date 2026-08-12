@@ -181,7 +181,7 @@ export default function LongFormPage() {
                 setRejectModal(null);
               }}
               className={`flex-1 text-sm py-2 rounded-[var(--r-md)] ${TONE.down} transition-colors font-medium`}
-            >Reject</button>
+            >Lükka tagasi</button>
             <button onClick={() => setRejectModal(null)} className={`flex-1 text-sm py-2 rounded-[var(--r-md)] ${TONE.ghost} transition-colors`}>Cancel</button>
           </div>
         </div>
@@ -246,7 +246,7 @@ export default function LongFormPage() {
                   value={postForm.youtubeUrl}
                   onChange={e => handleUrlChange(e.target.value)}
                   onPaste={e => { setTimeout(() => handleUrlChange((e.target as HTMLInputElement).value), 50); }}
-                  placeholder="Paste YouTube URL — auto-fills everything"
+                  placeholder="Kleebi YouTube URL — täidab kõik automaatselt"
                   className={`flex-1 ${INPUT} p-3 text-sm`}
                 />
                 <button
@@ -302,7 +302,7 @@ export default function LongFormPage() {
               }}
               disabled={!postForm.youtubeUrl}
               className={`flex-1 text-sm py-2 rounded-[var(--r-md)] ${TONE.accent} transition-colors font-medium disabled:opacity-40`}
-            >Post</button>
+            >Postita</button>
             <button onClick={() => setPostModal(null)} className={`flex-1 text-sm py-2 rounded-[var(--r-md)] ${TONE.ghost} transition-colors`}>Cancel</button>
           </div>
         </div>
@@ -440,7 +440,7 @@ export default function LongFormPage() {
               value={notesValue}
               onChange={e => setNotesValue(e.target.value)}
               onBlur={() => { if (notesValue !== script.notes) updateScript(script.id, { notes: notesValue }); }}
-              placeholder="Filming notes..."
+              placeholder="Filmi märkmed..."
               className={`w-full ${INPUT} p-2 text-xs text-[var(--text-2)] resize-none h-16`}
             />
           </div>
@@ -450,7 +450,7 @@ export default function LongFormPage() {
             <button
               onClick={() => copySpokenText(script)}
               className={`${BTN_BASE} ${TONE.ghost}`}
-            >Copy Full Script</button>
+            >Kopeeri kogu stsenaarium</button>
 
             {script.status === "draft" && !script.fullScript && (
               <>
@@ -466,7 +466,7 @@ export default function LongFormPage() {
                 <button
                   onClick={() => setRejectModal({ id: script.id, title: script.title })}
                   className={`${BTN_BASE} ${TONE.down}`}
-                >Reject</button>
+                >Lükka tagasi</button>
               </>
             )}
             {script.status === "draft" && script.fullScript && (
@@ -478,7 +478,7 @@ export default function LongFormPage() {
                 <button
                   onClick={() => setRejectModal({ id: script.id, title: script.title })}
                   className={`${BTN_BASE} ${TONE.down}`}
-                >Reject</button>
+                >Lükka tagasi</button>
               </>
             )}
 
@@ -495,7 +495,7 @@ export default function LongFormPage() {
                 <button
                   onClick={() => setRejectModal({ id: script.id, title: script.title })}
                   className={`${BTN_BASE} ${TONE.down}`}
-                >Reject</button>
+                >Lükka tagasi</button>
                 <button
                   onClick={() => updateScript(script.id, { status: "draft" })}
                   className={`${BTN_BASE} ${TONE.ghost}`}
@@ -512,7 +512,7 @@ export default function LongFormPage() {
                 <button
                   onClick={() => setRejectModal({ id: script.id, title: script.title })}
                   className={`${BTN_BASE} ${TONE.down}`}
-                >Reject</button>
+                >Lükka tagasi</button>
                 <button
                   onClick={() => updateScript(script.id, { status: "approved" })}
                   className={`${BTN_BASE} ${TONE.ghost}`}
