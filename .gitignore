@@ -46,3 +46,4 @@ next-env.d.ts
 .env*.local
 /services/client-pulse-bot/dist/
 node_modules/
+.env*
