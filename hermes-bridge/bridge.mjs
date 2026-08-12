@@ -136,6 +136,48 @@ async function mirrorModel() {
   } catch (e) { log("model get failed:", e.message.split("\n")[0]); }
 }
 
+// Journey Map — mirror a lightweight session list; full traces are fetched
+// on demand via a journey.fetch request (they can be large).
+async function mirrorJourney() {
+  try {
+    const out = await hermes(["sessions", "list", "--limit", "20"], { timeout: 15000 });
+    // Parse the table: Title | Preview | Last Active | ID  (last column = ID)
+    const sessions = [];
+    const lines = out.split("\n").map((l) => l.trimEnd()).filter(Boolean);
+    for (const line of lines.slice(2)) {
+      const idMatch = line.match(/(\d{8}_\d{6}_[A-Za-z0-9_]+)\s*$/);
+      if (!idMatch) continue;
+      const id = idMatch[1];
+      const title = line.replace(id, "").trim().slice(0, 80);
+      sessions.push({ id, title });
+    }
+    await setStore("hermes-journey", { sessions, syncedAt: new Date().toISOString() });
+  } catch (e) { log("journey list failed:", e.message.split("\n")[0]); }
+}
+
+// Skills inventory — mirror skill use counts from `hermes journey --json`
+// (the same payload the desktop Star Map renders: skills + memories with
+// useCount, category, state).
+async function mirrorSkills() {
+  try {
+    const out = await hermes(["journey", "--json"], { timeout: 15000 });
+    const payload = JSON.parse(out || "{}");
+    const nodes = Array.isArray(payload?.nodes) ? payload.nodes : [];
+    const skills = nodes
+      .filter((n) => n.kind === "skill")
+      .map((n) => ({
+        id: n.id,
+        label: n.label || n.id,
+        category: n.category || "",
+        useCount: n.useCount || 0,
+        state: n.state || "unknown",
+        pinned: Boolean(n.pinned),
+      }))
+      .sort((a, b) => b.useCount - a.useCount);
+    await setStore("hermes-skills", { skills, syncedAt: new Date().toISOString() });
+  } catch (e) { log("skills mirror failed:", e.message.split("\n")[0]); }
+}
+
 async function mirrorHealth() {
   let online = false, gateway = "unknown", detail = "";
   try {
@@ -282,8 +324,7 @@ async function runRequest(r) {
       result = `wrote ${rel}`;
     } else if (r.kind === "model.set") {
       const a = JSON.parse(r.prompt || "{}");
-      const model = (a.model || "").toString().trim();
-      // Independent allowlist in the bridge: never trust the website alone.
+      const model = (a.model || "").toString().trim();      // Independent allowlist in the bridge: never trust the website alone.
       const ALLOWED_MODELS = [
         "deepseek/deepseek-v4-flash",
         "anthropic/claude-sonnet-4.5",
@@ -298,6 +339,35 @@ async function runRequest(r) {
       if (!model || !ALLOWED_MODELS.includes(model)) throw new Error("model not allowed");
       result = (await hermes(["config", "set", "model", model], { timeout: 15000 })).trim();
       await mirrorModel();
+    } else if (r.kind === "journey.fetch") {
+      const a = JSON.parse(r.prompt || "{}");
+      const sessionId = (a.sessionId || "").toString().trim();
+      // Same strict format as the API route — never trust the prompt blindly.
+      if (!/^\d{8}_\d{6}_[A-Za-z0-9_]+$/.test(sessionId)) throw new Error("invalid sessionId");
+      // Export the session trace as JSONL; keep it bounded to the last ~300
+      // messages so huge sessions don't blow the 8MB buffer or the row.
+      const out = await hermes(["sessions", "export", "--format", "trace", "--session-id", sessionId], { timeout: 30000 });
+      const lines = out.split("\n").filter(Boolean).slice(-300);
+      const trace = lines.map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+      await setStore(`journey:${sessionId}`, { sessionId, trace, fetchedAt: new Date().toISOString() });
+      result = `journey fetched: ${trace.length} events`;
+    } else if (r.kind === "onboarding.write") {
+      const a = JSON.parse(r.prompt || "{}");
+      // Write the operator profile into Hermes' user memory (USER.md) so
+      // every future session knows who it works for.
+      const profilePath = path.join(os.homedir(), ".hermes", "profiles", "video", "memories", "USER.md");
+      const lines = [
+        "## Onboarding profiil (Hermy HQ kaudu)",
+      ];
+      for (const [k, v] of Object.entries(a)) {
+        if (v && typeof v === "string") lines.push(`- ${k}: ${v.slice(0, 200)}`);
+      }
+      try {
+        fs.appendFileSync(profilePath, "\n" + lines.join("\n") + "\n");
+        result = "profile written to USER.md";
+      } catch (e) {
+        throw new Error(`cannot write profile: ${e.message}`);
+      }
     } else if (r.kind === "briefing.generate") {
       await generateBriefing();
       lastBriefDate = new Date().toISOString().slice(0, 10);
@@ -353,6 +423,8 @@ async function mirrorTick() {
   try { await mirrorWiki(); } catch (e) { log("mirrorWiki err", e.message); }
   try { await mirrorCost(); } catch (e) { log("mirrorCost err", e.message); }
   try { await mirrorModel(); } catch (e) { log("mirrorModel err", e.message); }
+  try { await mirrorJourney(); } catch (e) { log("mirrorJourney err", e.message); }
+  try { await mirrorSkills(); } catch (e) { log("mirrorSkills err", e.message); }
   try { await maybeDailyBrief(); } catch (e) { log("maybeDailyBrief err", e.message); }
 }
 

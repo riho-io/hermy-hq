@@ -18,6 +18,9 @@ import {
   Workflow,
   Menu,
   X,
+  Map,
+  BookMarked,
+  BookOpenText,
 } from "lucide-react";
 
 const navGroups = [
@@ -48,9 +51,12 @@ const navGroups = [
     name: "Süsteem",
     items: [
       { href: "/agents", label: "Agendid", icon: Bot },
+      { href: "/journey", label: "Teekond", icon: Map },
+      { href: "/skills", label: "Skills", icon: BookMarked },
       { href: "/memory-wiki", label: "Mäluviki", icon: BookOpen },
       { href: "/ideas", label: "Ideed", icon: Lightbulb },
       { href: "/garden", label: "Aed", icon: Flower2 },
+      { href: "/docs", label: "Abi", icon: BookOpenText },
     ],
   },
 ];

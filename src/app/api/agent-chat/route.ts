@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
 
 interface AgentChatRequest {
   agentId: string;
@@ -6,102 +7,63 @@ interface AgentChatRequest {
   history?: Array<{ role: 'user' | 'assistant'; content: string }>;
 }
 
-interface AgentChatResponse {
-  reply: string;
-  agentId: string;
-}
-
+// Agent personas — each routes through Hermes (via the bridge) so the reply
+// carries the operator's real context, memory and skills. No external API key
+// needed: the bridge runs `hermes -z "<persona> <message>"`.
 const AGENT_PROMPTS: Record<string, string> = {
-  max: "You are Max 🐺, an AI executive assistant and COO-level strategist helping the user run their business. The user is a founder and content creator who runs AI trading bots. Be sharp, concise, strategic. Give real actionable advice.",
-  sage: "You are Sage 🌿, X/Twitter content specialist for the user. You write viral tweets in their voice — conversational, sharp, specific. Focus on hooks that make people stop scrolling. No fluff.",
-  knox: "You are Knox 🔐, operations and trading analyst for the user. You analyze Polymarket and Hyperliquid trading performance, spot patterns, suggest strategy improvements. Be data-driven and direct.",
-  nova: "You are Nova ⭐, YouTube strategy specialist for the user. You write scripts, hooks, thumbnails, titles. Think Mr Beast structure applied to the user's niche.",
-  pixel: "You are Pixel 🎨, web app product specialist for the user's products. You find UX improvements, feature ideas, competitor gaps. Think product manager + growth hacker.",
+  max: "You are Max, Riho's executive assistant and COO-level strategist for Põhja Mööbel OÜ (furniture business) and his AI ventures. Be sharp, concise, strategic. Give real actionable advice.",
+  sage: "You are Sage, content specialist. You help Riho with Estonian and English content, X posts, and Sisu (his content side-business). Write in a conversational, sharp voice. Focus on hooks.",
+  knox: "You are Knox, operations and analysis specialist. You analyze business processes, email orders from partner Valju, and suggest improvements. Be data-driven and direct.",
+  nova: "You are Nova, YouTube and video strategy specialist. You help with scripts, hooks, titles, and the video agent work (video summaries, mission control videos).",
+  pixel: "You are Pixel, web app / vibe-coding product specialist. You help with ~/vibe-projects apps, UX improvements, feature ideas, competitor gaps. Think product manager + growth hacker.",
 };
 
-export async function POST(request: NextRequest): Promise<NextResponse<AgentChatResponse | { error: string }>> {
+// POST /api/agent-chat { agentId, message, history? }
+// Queues a chat request on the Hermes message bus and polls until the bridge
+// finishes, returning the agent's reply. Timeout ~75s.
+export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const body: AgentChatRequest = await request.json();
-    const { agentId, message, history = [] } = body;
+    const { agentId, message } = body;
 
-    // Validate inputs
     if (!agentId || !message) {
-      return NextResponse.json(
-        { error: 'Missing agentId or message' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Missing agentId or message' }, { status: 400 });
+    }
+    if (typeof message !== 'string' || message.length > 2000) {
+      return NextResponse.json({ error: 'Message must be a string under 2000 chars' }, { status: 400 });
+    }
+    const persona = AGENT_PROMPTS[agentId];
+    if (!persona) {
+      return NextResponse.json({ error: `Unknown agent: ${agentId}` }, { status: 400 });
     }
 
-    if (!AGENT_PROMPTS[agentId]) {
-      return NextResponse.json(
-        { error: `Unknown agent: ${agentId}` },
-        { status: 400 }
-      );
-    }
-
-    const systemPrompt = AGENT_PROMPTS[agentId];
-    const apiKey = process.env.OPENROUTER_API_KEY;
-
-    if (!apiKey) {
-      console.error('OPENROUTER_API_KEY not configured');
-      return NextResponse.json(
-        { error: 'API configuration error' },
-        { status: 500 }
-      );
-    }
-
-    // Build messages array: system prompt + history + current message
-    const messages = [
-      ...history,
-      { role: 'user' as const, content: message },
-    ];
-
-    // Call OpenRouter API
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://your-app.vercel.app',
+    // Queue on the message bus — the bridge runs it via `hermes -z`.
+    const row = await prisma.agentRequest.create({
+      data: {
+        origin: 'web',
+        kind: 'chat',
+        title: `${agentId}: ${message.slice(0, 120)}`,
+        prompt: `${persona}\n\nUser: ${message}`,
+        sideEffecting: false,
+        status: 'queued',
       },
-      body: JSON.stringify({
-        model: 'anthropic/claude-haiku-4-5',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          ...messages,
-        ],
-        max_tokens: 800,
-      }),
     });
 
-    if (!response.ok) {
-      const error = await response.text();
-      console.error('OpenRouter API error:', error);
-      return NextResponse.json(
-        { error: 'Failed to get response from AI model' },
-        { status: 500 }
-      );
+    // Poll until done/failed (bridge poll is 5s, one-shot typically ~10-60s).
+    const deadline = Date.now() + 75000;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 4000));
+      const cur = await prisma.agentRequest.findUnique({ where: { id: row.id } });
+      if (!cur) break;
+      if (cur.status === 'done') {
+        return NextResponse.json({ reply: cur.result || '(tühi vastus)', agentId });
+      }
+      if (cur.status === 'failed') {
+        return NextResponse.json({ error: cur.error || 'Agent failed to respond' }, { status: 502 });
+      }
     }
-
-    const data = await response.json();
-    const reply = data.choices?.[0]?.message?.content || '';
-
-    if (!reply) {
-      return NextResponse.json(
-        { error: 'No response from AI model' },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({
-      reply,
-      agentId,
-    });
-  } catch (error) {
-    console.error('Agent chat error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Timeout waiting for agent' }, { status: 504 });
+  } catch {
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 }

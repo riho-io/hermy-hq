@@ -11,6 +11,8 @@ const ALLOWED_KINDS = new Set([
   "memory.write",
   "briefing.generate",
   "model.set",
+  "journey.fetch",
+  "onboarding.write",
   "cron.create",
   "cron.run",
   "cron.pause",
