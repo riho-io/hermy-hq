@@ -178,6 +178,31 @@ async function mirrorSkills() {
   } catch (e) { log("skills mirror failed:", e.message.split("\n")[0]); }
 }
 
+// Messaging channels — mirror platform status from `hermes status`.
+async function mirrorChannels() {
+  try {
+    const out = await hermes(["status"], { timeout: 12000 });
+    // Strip ANSI escape codes and box-drawing separators; keep plain text.
+    const clean = out
+      .replace(/\x1b\[[0-9;]*m/g, "")
+      .replace(/[│┃|]/g, " ")
+      .replace(/[─┄]/g, " ");
+    const channels = [];
+    const map = {
+      "Telegram": "Telegram",
+      "Discord": "Discord",
+      "WhatsApp": "WhatsApp",
+      "Slack": "Slack",
+    };
+    for (const [label, name] of Object.entries(map)) {
+      const m = clean.match(new RegExp(label + "\\s+(✓|✗)\\s*([^\\n]*)"));
+      const configured = m ? m[1] === "✓" : false;
+      channels.push({ name, configured, note: m && m[2] ? m[2].trim() : null });
+    }
+    await setStore("hermes-channels", { channels, syncedAt: new Date().toISOString() });
+  } catch (e) { log("channels mirror failed:", e.message.split("\n")[0]); }
+}
+
 async function mirrorHealth() {
   let online = false, gateway = "unknown", detail = "";
   try {
@@ -425,6 +450,7 @@ async function mirrorTick() {
   try { await mirrorModel(); } catch (e) { log("mirrorModel err", e.message); }
   try { await mirrorJourney(); } catch (e) { log("mirrorJourney err", e.message); }
   try { await mirrorSkills(); } catch (e) { log("mirrorSkills err", e.message); }
+  try { await mirrorChannels(); } catch (e) { log("mirrorChannels err", e.message); }
   try { await maybeDailyBrief(); } catch (e) { log("maybeDailyBrief err", e.message); }
 }
 

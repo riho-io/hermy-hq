@@ -23,8 +23,16 @@ const ALLOWED_KINDS = new Set([
 
 // Kinds that are ALWAYS side-effecting — the client may not downgrade them to
 // immediate execution. Goal mode is the most autonomous action, so it must
-// always wait for explicit approval.
-const ALWAYS_SIDE_EFFECTING = new Set(["goal"]);
+// always wait for explicit approval. Mutating cron ops also change external
+// state (the cron store) — they must go through approval too.
+const ALWAYS_SIDE_EFFECTING = new Set([
+  "goal",
+  "cron.create",
+  "cron.edit",
+  "cron.remove",
+  "cron.pause",
+  "cron.resume",
+]);
 
 // POST { kind?, title, prompt?, sideEffecting? } → queue work for Hermes.
 // Side-effecting work waits for approval; safe work is queued immediately.
