@@ -37,13 +37,13 @@ const TONE: Record<string, "neutral" | "up" | "down" | "warn" | "accent"> = {
   rejected: "neutral",
 };
 const LABEL: Record<string, string> = {
-  queued: "Queued",
-  awaiting_approval: "Awaiting approval",
-  approved: "Approved",
-  running: "Running",
-  done: "Done",
-  failed: "Failed",
-  rejected: "Rejected",
+  queued: "Järjekorras",
+  awaiting_approval: "Ootab kinnitust",
+  approved: "Kinnitatud",
+  running: "Töös",
+  done: "Valmis",
+  failed: "Ebaõnnestus",
+  rejected: "Tagasi lükatud",
 };
 
 export function HermesDispatches() {
@@ -66,15 +66,15 @@ export function HermesDispatches() {
 
   return (
     <div>
-      <SectionHeader label="Dispatches" title="What you've sent Hermes" />
+      <SectionHeader label="Saadetised" title="Mida oled Hermesele saatnud" />
       {!loaded ? (
         <Panel><div className="sk h-24 m-1 rounded-[10px]" /></Panel>
       ) : reqs.length === 0 ? (
         <Panel>
           <EmptyState
             icon={<Send className="w-5 h-5" />}
-            title="No dispatches yet"
-            hint="Send a task with ⌘K or the bar above — it'll appear here with its live status and result."
+            title="Saadetisi pole veel"
+            hint="Saada ülesanne ⌘K või ülaloleva ribaga — see ilmub siia koos reaalajas oleku ja tulemusega."
           />
         </Panel>
       ) : (

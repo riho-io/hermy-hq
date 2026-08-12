@@ -159,8 +159,8 @@ export default function GardenPage() {
             <input placeholder="Plant name" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className={inputCls} />
             <input placeholder="🌿" value={form.emoji} onChange={e => setForm(f => ({ ...f, emoji: e.target.value }))} className={`${inputCls} text-center text-[20px]`} />
             <select value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value as 'indoor' | 'outdoor' }))} className={inputCls}>
-              <option value="indoor">Indoor</option>
-              <option value="outdoor">Outdoor</option>
+              <option value="indoor">Toataim</option>
+              <option value="outdoor">Välitaim</option>
             </select>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">

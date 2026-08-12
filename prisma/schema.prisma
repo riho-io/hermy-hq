@@ -6,6 +6,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  schemas  = ["hermyhq"]
 }
 
 model Account {
@@ -24,6 +25,7 @@ model Account {
   user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
+  @@schema("hermyhq")
 }
 
 model Session {
@@ -32,6 +34,7 @@ model Session {
   userId       String
   expires      DateTime
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@schema("hermyhq")
 }
 
 model User {
@@ -42,6 +45,7 @@ model User {
   image         String?
   accounts      Account[]
   sessions      Session[]
+  @@schema("hermyhq")
 }
 
 model VerificationToken {
@@ -50,6 +54,7 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+  @@schema("hermyhq")
 }
 
 model Draft {
@@ -90,6 +95,7 @@ model Draft {
   @@index([tweetId])
   @@index([source])
   @@index([engagementTier])
+  @@schema("hermyhq")
 }
 
 model TweetMetric {
@@ -102,6 +108,7 @@ model TweetMetric {
   createdAt   DateTime  @default(now())
 
   @@index([draftId])
+  @@schema("hermyhq")
 }
 
 model Idea {
@@ -116,12 +123,14 @@ model Idea {
 
   @@index([category])
   @@index([type])
+  @@schema("hermyhq")
 }
 
 model ContentCalendar {
   id   String @id @default(cuid())
   week String @unique
   data Json
+  @@schema("hermyhq")
 }
 
 model YoutubeIdea {
@@ -140,6 +149,7 @@ model YoutubeIdea {
   createdAt         DateTime @default(now())
 
   @@index([status])
+  @@schema("hermyhq")
 }
 
 model YoutubeScript {
@@ -169,6 +179,7 @@ model YoutubeScript {
   updatedAt       DateTime @updatedAt
 
   @@index([status])
+  @@schema("hermyhq")
 }
 
 model YoutubeFeedback {
@@ -177,6 +188,7 @@ model YoutubeFeedback {
   reason String?
   type   String?
   date   DateTime @default(now())
+  @@schema("hermyhq")
 }
 
 model LongformScript {
@@ -212,6 +224,7 @@ model LongformScript {
   updatedAt        DateTime @updatedAt
 
   @@index([status])
+  @@schema("hermyhq")
 }
 
 model AgentState {
@@ -226,6 +239,7 @@ model AgentState {
   currentTask    String?
   recentActivity Json?     @default("[]")
   updatedAt      DateTime  @updatedAt
+  @@schema("hermyhq")
 }
 
 model AgentBusMessage {
@@ -240,12 +254,14 @@ model AgentBusMessage {
 
   @@index([toAgent, read])
   @@index([fromAgent])
+  @@schema("hermyhq")
 }
 
 model BattleRoyaleBot {
   id        String   @id
   state     Json
   updatedAt DateTime @updatedAt
+  @@schema("hermyhq")
 }
 
 model ContentRequest {
@@ -255,6 +271,7 @@ model ContentRequest {
   resultDraftIds Json?
   createdAt      DateTime  @default(now())
   completedAt    DateTime?
+  @@schema("hermyhq")
 }
 
 // ─── Generic Key-Value Store ────────────────────────────────────
@@ -263,6 +280,7 @@ model DataStore {
   key       String   @id
   data      Json
   updatedAt DateTime @updatedAt
+  @@schema("hermyhq")
 }
 
 // ─── Daily Briefs ───────────────────────────────────────────────
@@ -273,6 +291,7 @@ model Brief {
   content   String   @db.Text
   source    String   @default("brief")
   createdAt DateTime @default(now())
+  @@schema("hermyhq")
 }
 
 // ─── Missions ───────────────────────────────────────────────────
@@ -290,6 +309,7 @@ model Mission {
 
   @@index([agentId])
   @@index([status])
+  @@schema("hermyhq")
 }
 
 // ─── Articles ───────────────────────────────────────────────────
@@ -318,6 +338,7 @@ model Article {
   @@index([status])
   @@index([track])
   @@index([scheduledDate])
+  @@schema("hermyhq")
 }
 
 model SavedTitle {
@@ -328,6 +349,7 @@ model SavedTitle {
   createdAt DateTime @default(now())
 
   @@index([track])
+  @@schema("hermyhq")
 }
 
 // ─── Client Pulse Telegram Bot ─────────────────────────────────
@@ -352,6 +374,7 @@ model ClientPulseClient {
   @@index([status])
   @@index([clientName])
   @@index([productManagerName])
+  @@schema("hermyhq")
 }
 
 model ClientPulseChat {
@@ -370,6 +393,7 @@ model ClientPulseChat {
 
   @@index([linkedClientId])
   @@index([status])
+  @@schema("hermyhq")
 }
 
 model ClientPulseMessage {
@@ -394,6 +418,7 @@ model ClientPulseMessage {
   @@index([telegramChatId, sentAt])
   @@index([chatId, sentAt])
   @@index([needsReply])
+  @@schema("hermyhq")
 }
 
 model ClientPulseAnalysis {
@@ -419,6 +444,7 @@ model ClientPulseAnalysis {
   @@index([clientId, analyzedAt])
   @@index([category])
   @@index([overallScore])
+  @@schema("hermyhq")
 }
 
 model ClientPulseAlert {
@@ -441,6 +467,7 @@ model ClientPulseAlert {
   @@index([severity])
   @@index([sentAt])
   @@index([acknowledgedAt])
+  @@schema("hermyhq")
 }
 
 // ─── Hermes bus (Hermy HQ website ↔ Hermes on the Mac mini) ─────
@@ -467,6 +494,7 @@ model AgentRequest {
 
   @@index([status])
   @@index([createdAt])
+  @@schema("hermyhq")
 }
 
 model AgentEvent {
@@ -480,6 +508,7 @@ model AgentEvent {
   createdAt DateTime @default(now())
 
   @@index([createdAt])
+  @@schema("hermyhq")
 }
 
 model HermesTask {
@@ -495,6 +524,7 @@ model HermesTask {
 
   @@index([board])
   @@index([status])
+  @@schema("hermyhq")
 }
 
 // ─── Hermes Memory Wiki (warm tier — git-tracked markdown, mirrored) ─────
@@ -516,4 +546,5 @@ model HermesMemory {
 
   @@index([type])
   @@index([status])
+  @@schema("hermyhq")
 }

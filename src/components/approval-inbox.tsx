@@ -148,7 +148,7 @@ function InboxCard({
               }}
             >
               <Check className="w-3.5 h-3.5" />
-              Save
+              Salvesta
             </button>
             <button
               type="button"
@@ -159,7 +159,7 @@ function InboxCard({
               }}
               className="btn-ghost inline-flex items-center gap-1.5 px-3.5 py-1.5 text-[12px] font-medium"
             >
-              Cancel
+              Tühista
             </button>
           </>
         ) : (
@@ -175,7 +175,7 @@ function InboxCard({
               }}
             >
               <Check className="w-3.5 h-3.5" />
-              Approve
+              Kinnita
             </button>
             <button
               type="button"
@@ -184,7 +184,7 @@ function InboxCard({
               style={{ border: "1px solid var(--line)" }}
             >
               <X className="w-3.5 h-3.5" />
-              Reject
+              Lükka tagasi
             </button>
             <button
               type="button"
@@ -193,7 +193,7 @@ function InboxCard({
               style={{ border: "1px solid var(--line)" }}
             >
               <Pencil className="w-3.5 h-3.5" />
-              Edit
+              Muuda
             </button>
           </>
         )}
@@ -242,9 +242,9 @@ export function ApprovalInbox({ compact = false }: { compact?: boolean }) {
     <div>
       {/* Header */}
       <div className="flex items-center justify-between gap-3 mb-4">
-        <Eyebrow>Approval inbox</Eyebrow>
+        <Eyebrow>Kinnitussisend</Eyebrow>
         <Pill tone={count > 0 ? "accent" : "neutral"}>
-          {count} pending
+          {count} ootel
         </Pill>
       </div>
 
@@ -252,8 +252,8 @@ export function ApprovalInbox({ compact = false }: { compact?: boolean }) {
         <Panel className="p-2">
           <EmptyState
             icon={<Check className="w-6 h-6" style={{ color: "var(--up)" }} />}
-            title="Nothing needs you right now — you're clear."
-            hint="Side-effecting work waiting on your call will land here."
+            title="Midagi ei vaja sind praegu — oled vaba."
+            hint="Külgmõjuga töö, mis ootab sinu otsust, ilmub siia."
           />
         </Panel>
       ) : requests.length === 0 ? (
@@ -261,7 +261,7 @@ export function ApprovalInbox({ compact = false }: { compact?: boolean }) {
         <Panel className="p-2">
           <EmptyState
             icon={<Inbox className="w-6 h-6" />}
-            title="Checking the queue…"
+            title="Kontrollin järjekorda…"
           />
         </Panel>
       ) : (
@@ -280,7 +280,7 @@ export function ApprovalInbox({ compact = false }: { compact?: boolean }) {
               className="inline-flex items-center gap-1 self-start text-[12.5px] font-medium transition-colors"
               style={{ color: "var(--accent)" }}
             >
-              View all in Hermes →
+              Vaata kõiki Hermeses →
             </a>
           )}
         </div>

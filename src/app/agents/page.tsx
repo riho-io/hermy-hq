@@ -203,7 +203,7 @@ function AgentChat({ agent, onClose }: { agent: Agent; onClose: () => void }) {
             onClick={send}
             disabled={!input.trim() || loading}
             className="btn-primary px-4 py-2 text-[13px]"
-          >Send</button>
+          >Saada</button>
         </div>
       </div>
     </div>

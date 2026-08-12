@@ -78,7 +78,7 @@ export function HermesBriefing() {
       <div className="flex items-center justify-between gap-4 mb-3">
         <div className="flex items-center gap-2.5">
           <Sunrise className="w-4 h-4 text-[var(--accent)]" />
-          <Eyebrow>Chief of Staff</Eyebrow>
+          <Eyebrow>Peasekretär</Eyebrow>
           {!empty && (
             <span className="num text-[11px] text-[var(--text-3)]">· {timeAgo(data!.generatedAt as string)}</span>
           )}
@@ -87,12 +87,12 @@ export function HermesBriefing() {
           {pending > 0 && (
             <a href="/hermes" className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium num"
               style={{ color: "var(--warn)", background: "color-mix(in srgb, var(--warn) 12%, transparent)", border: "1px solid color-mix(in srgb, var(--warn) 24%, transparent)" }}>
-              {pending} need{pending === 1 ? "s" : ""} you <ArrowUpRight className="w-3 h-3" />
+              {pending} vajab{pending === 1 ? "" : "vad"} sind <ArrowUpRight className="w-3 h-3" />
             </a>
           )}
           <Button variant="ghost" size="sm" onClick={generate} disabled={generating}>
             <RefreshCw className={`w-3.5 h-3.5 ${generating ? "animate-spin" : ""}`} />
-            {generating ? "Generating…" : "Generate"}
+            {generating ? "Koostan…" : "Genereeri"}
           </Button>
         </div>
       </div>
@@ -100,11 +100,11 @@ export function HermesBriefing() {
       {empty ? (
         <div className="py-6 text-center">
           <p className="text-[14px] text-[var(--text-2)]">
-            {generating ? "Hermes is writing your brief… (~1 min)" : loaded ? "No brief yet." : "Loading…"}
+            {generating ? "Hermes koostab su briifi… (~1 min)" : loaded ? "Briifi pole veel." : "Laadin…"}
           </p>
           {!generating && loaded && (
             <p className="mt-1 text-[12.5px] text-[var(--text-3)]">
-              It auto-generates each morning — or hit Generate to get one now.
+              See genereerub igal hommikul automaatselt — või vajuta "Genereeri", et saada kohe.
             </p>
           )}
         </div>

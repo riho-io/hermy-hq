@@ -37,7 +37,7 @@ type PulseData = {
 
 const categoryLabel: Record<PulseClient["category"], string> = {
   urgent: "Urgent",
-  needs_attention: "Needs attention",
+  needs_attention: "Vajab tähelepanu",
   watch: "Watch",
   healthy: "Healthy",
 };
@@ -106,12 +106,12 @@ export default function ClientPulsePage() {
     <div className="relative z-10 p-8 space-y-8 text-[var(--text)]">
       <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <Eyebrow>Quality control</Eyebrow>
+          <Eyebrow>Kvaliteedikontroll</Eyebrow>
           <h1 className="mt-1 text-[28px] font-semibold tracking-[-0.02em] text-[var(--text)]">Client Pulse</h1>
           <p className="text-sm text-[var(--text-2)] mt-1">Telegram client sentiment, response SLAs, check-in cadence, and renewal risk.</p>
         </div>
         <div className="text-right">
-          <Eyebrow>Average score</Eyebrow>
+          <Eyebrow>Keskmine skoor</Eyebrow>
           <p className="num text-[40px] font-semibold tracking-[-0.02em] leading-none mt-1" style={{ color: scoreColor(data?.average || 0) }}>{data?.average ?? "—"}</p>
         </div>
       </header>
@@ -126,7 +126,7 @@ export default function ClientPulsePage() {
           <p className="num text-[28px] font-semibold tracking-[-0.02em] mt-1">{data?.counts.needsAttention || 0}</p>
         </Panel>
         <Panel className="p-4">
-          <Eyebrow>Watch</Eyebrow>
+          <Eyebrow>Jälgimine</Eyebrow>
           <p className="num text-[28px] font-semibold tracking-[-0.02em] mt-1">{data?.counts.watch || 0}</p>
         </Panel>
         <Panel className="p-4">
@@ -137,15 +137,15 @@ export default function ClientPulsePage() {
 
       <section className="flex flex-wrap gap-3">
         <select value={category} onChange={(event) => setCategory(event.target.value)} className={selectClass}>
-          <option value="all">All categories</option>
+          <option value="all">Kõik kategooriad</option>
           {Object.entries(categoryLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
         <select value={service} onChange={(event) => setService(event.target.value)} className={selectClass}>
-          <option value="all">All services</option>
+          <option value="all">Kõik teenused</option>
           {services.map((item) => <option key={item} value={item}>{item}</option>)}
         </select>
         <select value={owner} onChange={(event) => setOwner(event.target.value)} className={selectClass}>
-          <option value="all">All PMs</option>
+          <option value="all">Kõik PM-id</option>
           {owners.map((item) => <option key={item} value={item}>{item}</option>)}
         </select>
       </section>
@@ -188,7 +188,7 @@ export default function ClientPulsePage() {
       </section>
 
       <Panel className="p-5">
-        <SectionHeader title="Unmapped Telegram chats" />
+        <SectionHeader title="Kaardistamata Telegrami vestlused" />
         {!data?.unmappedChats.length && (
           <EmptyState title="No unmapped chats discovered yet." />
         )}

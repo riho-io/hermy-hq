@@ -229,7 +229,7 @@ export default function YouTubePage() {
               }}
               className="flex-1 text-sm py-2 rounded-[var(--r-md)] font-medium transition-colors"
               style={{ color: "var(--down)", background: "color-mix(in srgb, var(--down) 14%, transparent)" }}
-            >Reject</button>
+            >Lükka tagasi</button>
             <button onClick={() => { setRejectModal(null); }} className="btn-ghost flex-1 text-sm py-2">Cancel</button>
           </div>
         </div>
@@ -298,9 +298,9 @@ export default function YouTubePage() {
         {expanded && (
           <div className="px-4 pb-4 space-y-3">
             {[
-              { label: "Story Setup", text: script.storySetup },
-              { label: "Conflict / Pivot", text: script.conflict },
-              { label: "Insight / Payoff", text: script.insight },
+              { label: "Sissejuhatus", text: script.storySetup },
+              { label: "Konflikt / Pööre", text: script.conflict },
+              { label: "Sõnum / Lõpptulemus", text: script.insight },
               { label: "CTA", text: script.cta },
               { label: "Caption", text: script.caption },
             ].map(s => (
@@ -412,12 +412,12 @@ export default function YouTubePage() {
                     onClick={(e) => { e.stopPropagation(); updateScript(script.id, { status: "tofilm" }); }}
                     className="text-xs px-3 py-1.5 rounded-[var(--r-md)] font-medium transition-colors"
                     style={{ color: "var(--up)", background: "color-mix(in srgb, var(--up) 12%, transparent)" }}
-                  >Approve</button>
+                  >Kinnita</button>
                   <button
                     onClick={(e) => { e.stopPropagation(); setRejectModal({ type: "script", id: script.id, title: script.title }); }}
                     className="text-xs px-3 py-1.5 rounded-[var(--r-md)] transition-colors"
                     style={{ color: "var(--down)", background: "color-mix(in srgb, var(--down) 12%, transparent)" }}
-                  >Reject</button>
+                  >Lükka tagasi</button>
                 </>
               )}
 
