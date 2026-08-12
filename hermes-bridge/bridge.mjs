@@ -127,6 +127,15 @@ async function mirrorCost() {
   }
 }
 
+async function mirrorModel() {
+  try {
+    const out = await hermes(["config", "get", "model"], { timeout: 10000 });
+    // Output looks like "default: deepseek/deepseek-v4-flash" or just the model.
+    const model = (out.trim().split("\n")[0] || "").replace(/^[^:]+:\s*/, "").trim();
+    await setStore("hermes-model", { model, syncedAt: new Date().toISOString() });
+  } catch (e) { log("model get failed:", e.message.split("\n")[0]); }
+}
+
 async function mirrorHealth() {
   let online = false, gateway = "unknown", detail = "";
   try {
@@ -242,6 +251,13 @@ async function runRequest(r) {
     let result = "";
     if (r.kind === "oneshot" || r.kind === "chat") {
       result = (await hermes(["-z", r.prompt || r.title], { timeout: RUN_TIMEOUT_MS })).trim();
+    } else if (r.kind === "goal") {
+      // Goal mode — long autonomous run. Uses a longer timeout and passes the
+      // goal through as a one-shot prompt so Hermes loops on it by itself.
+      const goal = r.prompt || r.title;
+      const timeout = Math.max(RUN_TIMEOUT_MS, 30 * 60 * 1000); // at least 30 min
+      result = (await hermes(["-z", goal], { timeout })).trim();
+      await emit("goal", `Goal finished: ${r.title}`, { level: "up", detail: result.slice(0, 400), meta: { requestId: r.id } });
     } else if (r.kind === "kanban") {
       result = (await hermes(["kanban", "--board", BOARD, "create", "--json", r.title], { timeout: 20000 })).trim();
     } else if (r.kind.startsWith("cron.")) {
@@ -264,6 +280,24 @@ async function runRequest(r) {
       await gitCommitWiki(`wiki: update ${rel} (via dashboard)`);
       await mirrorWiki();
       result = `wrote ${rel}`;
+    } else if (r.kind === "model.set") {
+      const a = JSON.parse(r.prompt || "{}");
+      const model = (a.model || "").toString().trim();
+      // Independent allowlist in the bridge: never trust the website alone.
+      const ALLOWED_MODELS = [
+        "deepseek/deepseek-v4-flash",
+        "anthropic/claude-sonnet-4.5",
+        "anthropic/claude-opus-4.1",
+        "openai/gpt-5.2",
+        "openai/gpt-4.1",
+        "google/gemini-3-pro",
+        "google/gemini-3-flash",
+        "xai/grok-4",
+        "meta-llama/llama-4-maverick",
+      ];
+      if (!model || !ALLOWED_MODELS.includes(model)) throw new Error("model not allowed");
+      result = (await hermes(["config", "set", "model", model], { timeout: 15000 })).trim();
+      await mirrorModel();
     } else if (r.kind === "briefing.generate") {
       await generateBriefing();
       lastBriefDate = new Date().toISOString().slice(0, 10);
@@ -283,10 +317,32 @@ async function runRequest(r) {
 }
 
 async function processQueue() {
+  // Cap concurrent goals — repeated approvals could otherwise spawn many
+  // long-running Hermes processes at once.
+  let goalsRunning = 0;
   const { rows } = await q(
     `SELECT * FROM "AgentRequest" WHERE status IN ('queued','approved') ORDER BY "createdAt" ASC LIMIT 3`
   );
-  for (const r of rows) await runRequest(r);
+  if (rows.some((r) => r.kind === "goal")) {
+    const { rows: running } = await q(
+      `SELECT COUNT(*)::int AS n FROM "AgentRequest" WHERE kind='goal' AND status='running'`
+    );
+    goalsRunning = running[0]?.n || 0;
+  }
+  // Goals run detached (fire-and-forget) so a 30-min goal never blocks the
+  // rest of the queue (chats, crons, kanban, briefing all keep moving).
+  for (const r of rows) {
+    if (r.kind === "goal") {
+      if (goalsRunning >= 2) {
+        log("goal skipped — concurrency cap reached", r.id);
+        continue;
+      }
+      goalsRunning += 1;
+      runRequest(r).catch((e) => log("goal run err", e.message));
+    } else {
+      await runRequest(r);
+    }
+  }
 }
 
 /* ─────────────── loops ─────────────── */
@@ -296,6 +352,7 @@ async function mirrorTick() {
   try { await mirrorHealth(); } catch (e) { log("mirrorHealth err", e.message); }
   try { await mirrorWiki(); } catch (e) { log("mirrorWiki err", e.message); }
   try { await mirrorCost(); } catch (e) { log("mirrorCost err", e.message); }
+  try { await mirrorModel(); } catch (e) { log("mirrorModel err", e.message); }
   try { await maybeDailyBrief(); } catch (e) { log("maybeDailyBrief err", e.message); }
 }
 

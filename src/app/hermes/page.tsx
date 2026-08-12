@@ -14,6 +14,8 @@ import {
   LayoutGrid,
   Pause,
   Play,
+  Target,
+  Cpu,
 } from "lucide-react";
 import {
   Panel,
@@ -265,14 +267,178 @@ function DispatchBar({ onDone }: { onDone: () => void }) {
               />
             </span>
             <span className="text-[12px] font-medium text-[var(--text-2)]">
-              side-effecting?
+              külgmõjuga?
             </span>
           </button>
           <Button variant="primary" onClick={submit} disabled={busy || !text.trim()}>
             <Send className="w-3.5 h-3.5" />
-            Dispatch
+            Saada
           </Button>
         </div>
+      </div>
+      {toast && (
+        <p className="mt-3 text-[12.5px] text-[var(--text-2)] flex items-center gap-1.5">
+          <Check className="w-3.5 h-3.5" style={{ color: "var(--up)" }} />
+          {toast}
+        </p>
+      )}
+    </Panel>
+  );
+}
+
+// ── Goal Mode ─────────────────────────────────────────────
+// Send a long-running autonomous goal to Hermes (bridge runs it with a
+// longer timeout). Mirrors Julian's "goal mode": one prompt, hours of work.
+function GoalModeCard({ onDone }: { onDone: () => void }) {
+  const [goal, setGoal] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flash = (msg: string) => {
+    setToast(msg);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setToast(null), 6000);
+  };
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  const submit = async () => {
+    if (!goal.trim() || busy) return;
+    setBusy(true);
+    try {
+      const r = await fetch("/api/hermes/dispatch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // Goal mode is the most autonomous action — it MUST go through the
+        // approval gate before the bridge will run it.
+        body: JSON.stringify({ kind: "goal", sideEffecting: true, title: goal.trim().slice(0, 200), prompt: goal.trim() }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) {
+        setGoal("");
+        flash("Eesmärk saadetud kinnitussisendisse — kinnita see, siis hakkab Hermes tööle!");
+      } else {
+        flash("Saatmine ebaõnnestus. Proovi uuesti.");
+      }
+      onDone();
+    } catch {
+      flash("Saatmine ebaõnnestus. Proovi uuesti.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Panel className="p-5">
+      <div className="flex items-center gap-2.5 mb-3">
+        <Target className="w-4 h-4" style={{ color: "var(--accent)" }} />
+        <Eyebrow>Eesmärgirežiim</Eyebrow>
+        <Pill tone="accent">goal mode</Pill>
+      </div>
+      <p className="text-[12.5px] text-[var(--text-3)] mb-3">
+        Anna üks suur eesmärk — Hermes töötab selle kallal tunde iseseisvalt. Eesmärk läheb esmalt kinnitussisendisse (turvalisus!).
+      </p>
+      <textarea
+        value={goal}
+        onChange={(e) => setGoal(e.target.value)}
+        rows={3}
+        placeholder="Nt: uuri ja koosta terve nädala sisu meie publikule…"
+        className="w-full bg-transparent text-[13.5px] text-[var(--text)] placeholder:text-[var(--text-3)] px-3.5 py-2.5 rounded-[10px] border border-[var(--line)] focus:border-[color-mix(in_srgb,var(--accent)_45%,transparent)] outline-none transition-colors resize-y"
+      />
+      <div className="flex items-center justify-between mt-3">
+        <span className="text-[11px] text-[var(--text-3)] num">kuni 30 min autonoomset tööd</span>
+        <Button variant="primary" onClick={submit} disabled={busy || !goal.trim()}>
+          <Zap className="w-3.5 h-3.5" />
+          {busy ? "Saadan…" : "Käivita eesmärk"}
+        </Button>
+      </div>
+      {toast && (
+        <p className="mt-3 text-[12.5px] text-[var(--text-2)] flex items-center gap-1.5">
+          <Check className="w-3.5 h-3.5" style={{ color: "var(--up)" }} />
+          {toast}
+        </p>
+      )}
+    </Panel>
+  );
+}
+
+// ── Model switching ───────────────────────────────────────
+// Read + switch the Hermes model from the dashboard (2 clicks, like Julian's
+// "manage tab"). Talks to /api/hermes/model which shells out to the CLI.
+function ModelSwitcher() {
+  const [current, setCurrent] = useState("");
+  const [models, setModels] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const r = await fetch("/api/hermes/model");
+      if (r.ok) {
+        const d = await r.json();
+        setCurrent(d.model || "");
+        setModels(d.models || []);
+      }
+    } catch { /* bridge may be offline */ }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  const flash = (msg: string) => {
+    setToast(msg);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setToast(null), 5000);
+  };
+
+  const switchTo = async (m: string) => {
+    if (busy || m === current) return;
+    setBusy(true);
+    try {
+      const r = await fetch("/api/hermes/model", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: m }),
+      });
+      if (r.ok) {
+        setCurrent(m);
+        flash(`Mudel vahetatud: ${m}`);
+      } else {
+        flash("Vahetamine ebaõnnestus.");
+      }
+    } catch {
+      flash("Vahetamine ebaõnnestus.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Panel className="p-5">
+      <div className="flex items-center gap-2.5 mb-3">
+        <Cpu className="w-4 h-4" style={{ color: "var(--accent)" }} />
+        <Eyebrow>Mudeli vahetamine</Eyebrow>
+      </div>
+      <p className="text-[12.5px] text-[var(--text-3)] mb-3">
+        Praegune: <span className="num text-[var(--text)]">{current || "—"}</span>
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {models.map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => switchTo(m)}
+            disabled={busy || m === current}
+            className={`px-2.5 py-1.5 rounded-md text-[11px] font-medium num transition-colors ${
+              m === current
+                ? "bg-[var(--surface-2)] text-[var(--text)] border border-[var(--line)]"
+                : "text-[var(--text-2)] hover:text-[var(--text)] border border-[var(--line)] hover:border-[color-mix(in_srgb,var(--accent)_45%,transparent)]"
+            }`}
+          >
+            {m.split("/").pop()}
+          </button>
+        ))}
       </div>
       {toast && (
         <p className="mt-3 text-[12.5px] text-[var(--text-2)] flex items-center gap-1.5">
@@ -815,6 +981,12 @@ export default function HermesPage() {
         {/* Dispatch */}
         <div className="hq-rise">
           <DispatchBar onDone={load} />
+        </div>
+
+        {/* Goal Mode + Model switching — Julian-style extras */}
+        <div className="mt-5 grid grid-cols-1 xl:grid-cols-2 gap-5 items-start hq-rise">
+          <GoalModeCard onDone={load} />
+          <ModelSwitcher />
         </div>
 
         {/* Dispatches — what you've sent Hermes + live status/results */}
