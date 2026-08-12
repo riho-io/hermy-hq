@@ -65,6 +65,78 @@ function evTitle(ev: TraceEvent): string {
   return "(tühi samm)";
 }
 
+// ── Secret redaction + export ─────────────────────────────
+// Redact credential-like patterns before any export (Julian's "safe
+// transparency"): API keys, bearer tokens, URLs with embedded passwords.
+const REDACT_PATTERNS: RegExp[] = [
+  /(sk-[A-Za-z0-9_-]{8,})/g,
+  /(ghp_[A-Za-z0-9]{8,})/g,
+  /(github_pat_[A-Za-z0-9_]{8,})/g,
+  /(sbp_[A-Za-z0-9]{8,})/g,
+  /(sbp_oauth_[A-Za-z0-9]{8,})/g,
+  /(GOCSPX-[A-Za-z0-9_-]{8,})/g,
+  /(AIza[A-Za-z0-9_-]{10,})/g,
+  /(AKIA[A-Z0-9]{16})/g,
+  /(Bearer\s+)[A-Za-z0-9._-]{8,}/gi,
+  /(postgres(?:ql)?:\/\/[^:\s]+:)[^@\s]+(@)/g,
+  /(eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})/g,
+  /(api[_-]?key["']?\s*[:=]\s*["']?)[A-Za-z0-9._+\/=]{8,}/gi,
+  /(token["']?\s*[:=]\s*["']?)[A-Za-z0-9._-]{8,}/gi,
+  /(secret["']?\s*[:=]\s*["']?)[A-Za-z0-9._-]{8,}/gi,
+  /(password["']?\s*[:=]\s*["']?)[A-Za-z0-9._-]{8,}/gi,
+];
+
+function redactString(s: string): string {
+  let out = s;
+  for (const re of REDACT_PATTERNS) {
+    out = out.replace(re, (m, ...groups) => {
+      // Preserve prefixes (e.g. "Bearer ", "key=", url user:) and mask the rest.
+      const prefix = groups.slice(0, -2).find((g) => typeof g === "string" && g.length > 0) || "";
+      return prefix + "***";
+    });
+  }
+  return out;
+}
+
+// Recursively redact every string in a cloned structure — nested fields,
+// tool arguments, results, metadata, headers all get scrubbed.
+function redactDeep(value: unknown): unknown {
+  if (typeof value === "string") return redactString(value);
+  if (Array.isArray(value)) return value.map((v) => redactDeep(v));
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) out[k] = redactDeep(v);
+    return out;
+  }
+  return value;
+}
+
+function exportJourney(trace: TraceEvent[], sessionId: string, format: "md" | "json") {
+  if (format === "json") {
+    const safe = redactDeep(JSON.parse(JSON.stringify(trace)));
+    const blob = new Blob([JSON.stringify({ sessionId, events: safe }, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `journey-${sessionId}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } else {
+    const lines = trace.map((ev, i) => {
+      const title = redactString(evTitle(ev));
+      const time = fmtTime(ev.timestamp);
+      const tag = ev.error ? "❌" : "•";
+      return `${tag} **${time || `samm ${i + 1}`}** — ${title}`;
+    });
+    const md = `# Teekond: ${redactString(sessionId)}\n\n${lines.join("\n")}\n`;
+    const blob = new Blob([md], { type: "text/markdown" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `journey-${sessionId}.md`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+}
+
 // ── Journey Map panel ─────────────────────────────────────
 export default function JourneyPage() {
   const [sessions, setSessions] = useState<SessionRow[]>([]);
@@ -203,6 +275,19 @@ export default function JourneyPage() {
                 <div className="flex items-center gap-2 mb-4">
                   <Eyebrow>Teekond</Eyebrow>
                   <span className="num text-[10.5px] text-[var(--text-3)]">{trace.length} sammu</span>
+                  <span className="flex-1" />
+                  {selected && (
+                    <>
+                      <button type="button" onClick={() => exportJourney(trace, selected, "md")}
+                        className="text-[11px] font-medium px-2.5 py-1.5 rounded-md border border-[var(--line)] text-[var(--text-2)] hover:text-[var(--text)] hover:border-[color-mix(in_srgb,var(--accent)_45%,transparent)] transition-colors">
+                        Ekspordi .md
+                      </button>
+                      <button type="button" onClick={() => exportJourney(trace, selected, "json")}
+                        className="text-[11px] font-medium px-2.5 py-1.5 rounded-md border border-[var(--line)] text-[var(--text-2)] hover:text-[var(--text)] hover:border-[color-mix(in_srgb,var(--accent)_45%,transparent)] transition-colors">
+                        Ekspordi .json
+                      </button>
+                    </>
+                  )}
                 </div>
                 <div className="relative flex flex-col">
                   {trace.map((ev, i) => (
