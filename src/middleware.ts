@@ -21,6 +21,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // VPS push endpoint authenticates via x-konto-secret in the route itself; GET stays session-protected
+  if (pathname.startsWith('/api/konto-check') && request.method === 'POST') {
+    return NextResponse.next();
+  }
+
   // Allow internal agent calls with shared secret
   const internalSecret = request.headers.get('x-internal-secret');
   if (internalSecret && internalSecret === process.env.INTERNAL_API_SECRET) {
