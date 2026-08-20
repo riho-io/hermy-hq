@@ -527,6 +527,15 @@ model HermesTask {
   @@schema("hermyhq")
 }
 
+// ─── Kontojälgija (VPS account-check push) ───────────────────────
+model KontoCheck {
+  id        String   @id @default("latest")
+  payload   Json
+  checkedAt DateTime @default(now()) @map("checked_at")
+  @@map("konto_check")
+  @@schema("hermyhq")
+}
+
 // ─── Hermes Memory Wiki (warm tier — git-tracked markdown, mirrored) ─────
 model HermesMemory {
   id         String    @id            // wiki entry slug (relative path w/o .md)

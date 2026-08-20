@@ -22,6 +22,7 @@ import {
   BookMarked,
   BookOpenText,
   MessagesSquare,
+  Activity,
 } from "lucide-react";
 
 const navGroups = [
@@ -59,6 +60,7 @@ const navGroups = [
       { href: "/garden", label: "Aed", icon: Flower2 },
       { href: "/channels", label: "Kanalid", icon: MessagesSquare },
       { href: "/docs", label: "Abi", icon: BookOpenText },
+      { href: "/konto", label: "Kontojälgija", icon: Activity },
     ],
   },
 ];
