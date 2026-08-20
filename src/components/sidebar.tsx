@@ -23,6 +23,7 @@ import {
   BookOpenText,
   MessagesSquare,
   Activity,
+  Globe,
 } from "lucide-react";
 
 const navGroups = [
@@ -61,6 +62,7 @@ const navGroups = [
       { href: "/channels", label: "Kanalid", icon: MessagesSquare },
       { href: "/docs", label: "Abi", icon: BookOpenText },
       { href: "/konto", label: "Kontojälgija", icon: Activity },
+      { href: "/sites", label: "Kodulehed", icon: Globe },
     ],
   },
 ];
