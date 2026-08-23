@@ -527,6 +527,25 @@ model HermesTask {
   @@schema("hermyhq")
 }
 
+// ─── Meeldetuletused (üldised — maksed, kindlustus, tähtajad) ─────
+model Reminder {
+  id        String    @id @default(cuid())
+  title     String
+  category  String    @default("Muud")   // filterkategooria: Maksed, Kindlustus, ...
+  amount    String?                      // nt "123,45 €" või "45 €"
+  dueDate   DateTime?                    // tähtaeg (kuupäev)
+  repeat    String    @default("none")   // none | yearly | monthly | weekly
+  status    String    @default("active") // active | done
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([category])
+  @@index([status])
+  @@index([dueDate])
+  @@schema("hermyhq")
+}
+
 // ─── Kontojälgija (VPS account-check push) ───────────────────────
 model KontoCheck {
   id        String   @id @default("latest")

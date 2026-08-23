@@ -24,6 +24,7 @@ import {
   MessagesSquare,
   Activity,
   Globe,
+  Bell,
 } from "lucide-react";
 
 const navGroups = [
@@ -33,6 +34,7 @@ const navGroups = [
       { href: "/", label: "Töölaud", icon: Home },
       { href: "/hermes", label: "Hermes", icon: Cpu },
       { href: "/tasks", label: "Ülesanded", icon: ClipboardList },
+      { href: "/reminders", label: "Meeldetuletused", icon: Bell },
     ],
   },
   {
