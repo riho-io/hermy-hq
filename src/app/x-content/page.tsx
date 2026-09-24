@@ -56,7 +56,7 @@ function TrendRadarSection() {
     try {
       await fetch("/api/trends/snipe", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-internal-secret": "***REMOVED***" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ trendId: trend.id, topic: trend.topic, sageAngle: trend.sageAngle, url: trend.url }),
       });
     } finally { setTimeout(() => setSnipedId(null), 2000); }

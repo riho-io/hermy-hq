@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { hasInternalSecret } from "@/lib/internal-secret";
 
 export const dynamic = "force-dynamic";
 
-const SECRET = process.env.INTERNAL_SECRET || "***REMOVED***";
-
 export async function POST(req: Request) {
-  const secret = req.headers.get("x-internal-secret");
-  if (secret !== SECRET) {
+  if (!hasInternalSecret(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

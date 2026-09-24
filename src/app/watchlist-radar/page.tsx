@@ -42,7 +42,6 @@ function SignalCard({ signal }: { signal: Signal }) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-internal-secret": "***REMOVED***",
         },
         body: JSON.stringify({
           text: signal.draft,
