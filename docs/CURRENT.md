@@ -98,7 +98,9 @@ Kontrollitud serverist:
 - Mobiilivaade on klassidega tehtud, aga brauseris kontrollimata (akent ei saanud kitsamaks).
 
 Leht näitas kohe kaks päris asja:
-- **PML päringud seisavad alates 26.09** (10 p) — riho@pml.ee → `m_tark.inquiries` toru vajab kontrolli.
+- **PML päringud seisavad alates 26.09** (10 p) — põhjus: AIMBOX-is IMAP-host kõvakodeeritud, pml.ee koliti Zohosse.
+  **Parandatud 06.10** (aimbox PR #15, #16; `V:\projects\aimbox\docs\CURRENT.md`), läbiv test OK. Tühimiku backfill lahti.
+  Jarvise järgmine samm: allikas „AIMBOX" = viimane õnnestunud sünk/heartbeat (AIMBOX etapp 4).
 - Kontojälgija: **openrouter** jääk alla hoiatuspiiri.
 
 Otsused (Riho 06.10): Sisumi kulud tulevad muust allikast kui kulu-äpp (kulu-äpis on ainult Põhja Mööbel OÜ ja Forwood OÜ) — allikas lahtine.
