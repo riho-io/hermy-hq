@@ -76,7 +76,20 @@ Kontrollitud serverist:
 - Igat croni muuta pole vaja: `~/.hermes/cron/jobs.json` (seis) + `executions.db` (1000 viimast jooksu, `cron_incidents`).
   Üks skript-cron loeb need ja saadab edasi.
 
-Tehtud (commitimata):
+**Etapp 1 VALMIS 06.10** (commitid `134a36b`, `7dd94dc`, prod kontrollitud):
+- Cron `c51d63388b48` „hermy-hq sünk (Jarvis)" every 5m, no-agent, `--failure-deliver local`.
+  Esimene ajastatud jooks 17:41 ok → `hermyhq.agent_job` 20 rida, jooksud kohal, Telegrami midagi ei läinud.
+- `INGEST_SECRET`: Vercel Production (sensitive) + Argo `~/.config/hermy-hq/ingest_secret` (600).
+  **Riho TODO:** serveri Doppleri token on ainult lugemiseks → lisa `INGEST_SECRET` Doppleri `hermes/prd`-sse
+  (sama väärtus failist), siis kustuta fail. Skript eelistab Doppleri muutujat automaatselt.
+- Kõrvalparandused tehtud: kõik 7 salajase võtme võrdlust konstantse ajaga ja fail-closed (`map-chat` oli fail-open,
+  `x-stats` võttis vastu „Bearer undefined"); `middleware.ts` → `proxy.ts`.
+  Prodis kontrollitud: leht ilma sessioonita → /login, vale võtmed → 401, päris konto/sites push → 200.
+- Lahti jäänud: `cache/clear` GET võtab võtme ka query-parameetrist (`?secret=`) — satub logidesse. Eraldi otsus.
+
+Järgmine: **etapp 2** — `/jarvis` leht (TODAY riba, CONNECTED APPS, HERMES AGENT kaart).
+
+Tehtud enne commiti:
 - [x] DB: `hermyhq.agent_job`, `agent_job_run`, `source_heartbeat` — RLS sees samas migratsioonis, poliitikad ainult rollile `hermyhq`
   (omanikuks seada ei saanud: `postgres` ei tohi `SET ROLE hermyhq`). Kontrollitud: anon SELECT = false, advisor ei leia midagi.
 - [x] Prisma mudelid `AgentJob`, `AgentJobRun`, `SourceHeartbeat`.
@@ -84,16 +97,8 @@ Tehtud (commitimata):
   Test kohapeal päris andmetega: ilma võtmeta 401, vale võti 401, vigane JSON 400, võõras `source` 400, `../x` ID 400, päris andmed läbivad valideerimise.
 - [x] `scripts/argo/hermy_cron_sync.py` — loeb ainult, prindib ainult oleku muutumisel. Lugemisosa testitud serveris: 19 tööd, 7 jooksu, 7,6 kB.
 
-Ootab Riho luba (väljapoole minevad sammud):
-- [ ] Commit + push `main` → Verceli deploy.
-- [ ] `INGEST_SECRET` genereerida → Vercel (Production) + Doppler `hermes/prd` → `systemctl --user restart hermes-secrets hermes-gateway`.
-- [ ] Skript `~/.hermes/scripts/` alla + no-agent cron `every 5m`.
-- [ ] Kontroll: päris jooks ilmub `hermyhq.agent_job_run`-i; Telegrami ei tule ühtegi sõnumit, kui kõik töötab.
-
-Kõrvalleiud (mitte selle töö osa):
-- `middleware.ts` → Next 16 nimi on `proxy.ts`. Eraldi muudatus.
-- `konto-check` ja middleware'i `x-internal-secret` kasutavad veel `===` võrdlust (mitte konstantse ajaga). Eraldi parandus.
-- Supabase `projektid`: loader'i `set_plan_by_email` jt anon-le kutsutavad — juba teada, `task_14eff2a7`.
+Kõrvalleid (teine projekt, puutumata):
+- Supabase `projektid`: loader'i `set_plan_by_email` jt anon-le kutsutavad — juba teada, `task_14eff2a7`, endiselt lahti.
 
 ## AI-võimalused (scan)
 
