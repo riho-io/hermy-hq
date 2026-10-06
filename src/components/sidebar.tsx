@@ -25,6 +25,7 @@ import {
   Activity,
   Globe,
   Bell,
+  Radar,
 } from "lucide-react";
 
 const navGroups = [
@@ -32,6 +33,7 @@ const navGroups = [
     name: "Ülevaade",
     items: [
       { href: "/", label: "Töölaud", icon: Home },
+      { href: "/jarvis", label: "Jarvis", icon: Radar },
       { href: "/hermes", label: "Hermes", icon: Cpu },
       { href: "/tasks", label: "Ülesanded", icon: ClipboardList },
       { href: "/reminders", label: "Meeldetuletused", icon: Bell },
