@@ -576,3 +576,58 @@ model HermesMemory {
   @@index([status])
   @@schema("hermyhq")
 }
+
+// ─── Jarvis: agent telemetry pushed by Argo via /api/ingest/* ─────────────
+// Argo is the only writer (x-ingest-secret); the dashboard only reads.
+
+// One row per Hermes cron job, replaced on every sync (snapshot of jobs.json).
+model AgentJob {
+  id            String    @id // Hermes job id, e.g. "956b6e0f3f0f"
+  source        String    @default("argo") // which agent host reported it
+  name          String
+  schedule      String // human form, e.g. "every 360m" / "0 8 * * *"
+  state         String // scheduled | paused | ...
+  enabled       Boolean   @default(true)
+  noAgent       Boolean   @default(false) @map("no_agent")
+  lastRunAt     DateTime? @map("last_run_at")
+  lastStatus    String?   @map("last_status") // ok | error | ...
+  lastError     String?   @map("last_error")
+  failureStreak Int       @default(0) @map("failure_streak")
+  nextRunAt     DateTime? @map("next_run_at")
+  syncedAt      DateTime  @default(now()) @map("synced_at")
+
+  @@index([source])
+  @@map("agent_job")
+  @@schema("hermyhq")
+}
+
+// One row per execution (from Hermes executions.db). Upserted: a run moves running -> completed/failed.
+model AgentJobRun {
+  id              String    @id // Hermes execution id
+  jobId           String    @map("job_id")
+  source          String    @default("argo")
+  status          String // claimed | running | completed | failed | unknown
+  startedAt       DateTime? @map("started_at")
+  finishedAt      DateTime? @map("finished_at")
+  error           String?
+  deliveryOutcome String?   @map("delivery_outcome")
+  syncedAt        DateTime  @default(now()) @map("synced_at")
+
+  @@index([jobId, startedAt])
+  @@index([startedAt])
+  @@map("agent_job_run")
+  @@schema("hermyhq")
+}
+
+// "Connected apps": last attempt per data source and whether it succeeded inside its expected window.
+model SourceHeartbeat {
+  source           String    @id // e.g. "hermes", "konto", "wiki-pc"
+  lastAttemptAt    DateTime  @map("last_attempt_at")
+  lastOkAt         DateTime? @map("last_ok_at")
+  ok               Boolean
+  detail           String?
+  expectedEveryMin Int       @map("expected_every_min")
+
+  @@map("source_heartbeat")
+  @@schema("hermyhq")
+}
