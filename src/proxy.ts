@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
+import { hasInternalSecret } from '@/lib/internal-secret';
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // DEV-ONLY local bypass (never active on Vercel preview/prod builds).
@@ -37,8 +38,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // Allow internal agent calls with shared secret
-  const internalSecret = request.headers.get('x-internal-secret');
-  if (internalSecret && internalSecret === process.env.INTERNAL_API_SECRET) {
+  if (hasInternalSecret(request)) {
     return NextResponse.next();
   }
 

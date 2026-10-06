@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { secretMatches } from "@/lib/internal-secret";
 
+// Fail-closed: with no secret configured nothing is accepted (was fail-open, audit 2026-09-24).
 function isAuthorized(request: Request) {
   const secret = process.env.CLIENT_PULSE_ADMIN_SECRET || process.env.CRON_SECRET;
-  if (!secret) return true;
-  return request.headers.get("authorization") === `Bearer ${secret}`;
+  if (!secret) return false;
+  return secretMatches(request.headers.get("authorization"), `Bearer ${secret}`);
 }
 
 export async function POST(request: Request) {

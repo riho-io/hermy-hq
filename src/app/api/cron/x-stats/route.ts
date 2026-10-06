@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { secretMatches } from "@/lib/internal-secret";
 
 export const maxDuration = 30;
 
 export async function GET(request: Request) {
-  const authHeader = request.headers.get("authorization");
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  const cronSecret = process.env.CRON_SECRET;
+  // Without CRON_SECRET the old check accepted the literal "Bearer undefined"; now fail-closed.
+  if (!cronSecret || !secretMatches(request.headers.get("authorization"), `Bearer ${cronSecret}`)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

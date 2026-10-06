@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { secretMatches } from '@/lib/internal-secret';
 
 export async function POST(req: NextRequest) {
-  const secret = req.headers.get('x-konto-secret');
-  if (!secret || secret !== process.env.KONTO_PUSH_SECRET) {
+  if (!secretMatches(req.headers.get('x-konto-secret'), process.env.KONTO_PUSH_SECRET)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

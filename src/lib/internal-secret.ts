@@ -4,7 +4,7 @@ import { timingSafeEqual } from "crypto";
  * Constant-time compare so a secret cannot be guessed byte by byte.
  * Fail-closed: a missing expected or given value never matches.
  */
-function secretMatches(given: string | null, expected: string | undefined): boolean {
+export function secretMatches(given: string | null, expected: string | undefined): boolean {
   if (!expected || !given) return false;
   const a = Buffer.from(given);
   const b = Buffer.from(expected);
