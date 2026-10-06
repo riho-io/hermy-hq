@@ -86,7 +86,24 @@ Kontrollitud serverist:
   Prodis kontrollitud: leht ilma sessioonita → /login, vale võtmed → 401, päris konto/sites push → 200.
 - Lahti jäänud: `cache/clear` GET võtab võtme ka query-parameetrist (`?secret=`) — satub logidesse. Eraldi otsus.
 
-Järgmine: **etapp 2** — `/jarvis` leht (TODAY riba, CONNECTED APPS, HERMES AGENT kaart).
+## Etapp 2 — VALMIS 06.10 (`1ac7a88`, `23bfdf4`)
+
+`/jarvis` (menüüs „Ülevaade → Jarvis"), päris andmetega prodis üle vaadatud:
+- TODAY: PML päringud (vaade `hermyhq.jarvis_pml_inquiry_stats` — ainult koondarvud, anon ei näe), kontode probleemid,
+  dubly.me maksed + Sisumi väljaminekud „ühendamata".
+- Ühendatud allikad (8): roheline ainult siis, kui viimane õnnestumine jäi oodatud aja sisse.
+- **Päeva rada** (allkiri): kõik Argo tööd ühel 24 h teljel (18 h taha, 6 h ette), jooksud täppidena, järgmine rõngana.
+- Hermese kaart: järgmine, viimati tehtud, praegu katki. Ajad Tallinna ajas, leht värskeneb iga minut.
+- Teadlikult tume (rakenduse kit), mitte Jay hele teema.
+- Mobiilivaade on klassidega tehtud, aga brauseris kontrollimata (akent ei saanud kitsamaks).
+
+Leht näitas kohe kaks päris asja:
+- **PML päringud seisavad alates 26.09** (10 p) — riho@pml.ee → `m_tark.inquiries` toru vajab kontrolli.
+- Kontojälgija: **openrouter** jääk alla hoiatuspiiri.
+
+Otsused (Riho 06.10): Sisumi kulud tulevad muust allikast kui kulu-äpp (kulu-äpis on ainult Põhja Mööbel OÜ ja Forwood OÜ) — allikas lahtine.
+
+Järgmine: **etapp 3** — wiki graaf (PC + Argo eri värviga). Või avalehe vahetus, kui Jarvis jääb.
 
 Tehtud enne commiti:
 - [x] DB: `hermyhq.agent_job`, `agent_job_run`, `source_heartbeat` — RLS sees samas migratsioonis, poliitikad ainult rollile `hermyhq`
