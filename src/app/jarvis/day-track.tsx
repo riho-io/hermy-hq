@@ -36,7 +36,8 @@ export function DayTrack({ jobs, runs, now }: { jobs: JobRow[]; runs: RunDot[]; 
         <div className="hidden md:block" />
         <div className="relative h-6 text-[10.5px] num text-[var(--text-4)]" aria-hidden>
           {ticks.map((t, i) =>
-            t.label ? (
+            // Hour labels yield to the "now" label when they would overlap it.
+            t.label && Math.abs(t.left - nowPct) > 3 ? (
               <span key={i} className="absolute -translate-x-1/2 bottom-1" style={{ left: `${t.left}%` }}>
                 {t.label}
               </span>
@@ -57,8 +58,13 @@ export function DayTrack({ jobs, runs, now }: { jobs: JobRow[]; runs: RunDot[]; 
           const nextT = job.nextRunAt?.getTime();
           const showNext = nextT !== undefined && nextT >= now.getTime() && nextT <= end;
           const paused = job.state !== 'scheduled';
+          // Weekly jobs have nothing inside the window; dim them so the eye stays on what is moving.
+          const quiet = !dots.length && !showNext && !job.failing;
           return (
-            <li key={job.id} className="grid grid-cols-1 md:grid-cols-[minmax(0,240px)_1fr] gap-x-6 gap-y-2 py-2.5">
+            <li
+              key={job.id}
+              className={`grid grid-cols-1 md:grid-cols-[minmax(0,240px)_1fr] gap-x-6 gap-y-2 py-2.5 ${quiet ? 'opacity-50' : ''}`}
+            >
               <div className="min-w-0">
                 <p
                   className={`truncate text-[13px] font-medium ${job.failing ? 'text-[var(--down)]' : paused ? 'text-[var(--text-3)]' : 'text-[var(--text)]'}`}
