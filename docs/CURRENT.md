@@ -79,9 +79,8 @@ Kontrollitud serverist:
 **Etapp 1 VALMIS 06.10** (commitid `134a36b`, `7dd94dc`, prod kontrollitud):
 - Cron `c51d63388b48` „hermy-hq sünk (Jarvis)" every 5m, no-agent, `--failure-deliver local`.
   Esimene ajastatud jooks 17:41 ok → `hermyhq.agent_job` 20 rida, jooksud kohal, Telegrami midagi ei läinud.
-- `INGEST_SECRET`: Vercel Production (sensitive) + Argo `~/.config/hermy-hq/ingest_secret` (600).
-  **Riho TODO:** serveri Doppleri token on ainult lugemiseks → lisa `INGEST_SECRET` Doppleri `hermes/prd`-sse
-  (sama väärtus failist), siis kustuta fail. Skript eelistab Doppleri muutujat automaatselt.
+- `INGEST_SECRET`: Doppler `hermes/prd` + Vercel Production (sensitive). Roteeritud 06.10 (Riho genereeris Doppleris,
+  kandis Vercelisse käsitsi — väärtus pole vestluses). Vana failivõti kustutatud. Ajastatud jooks 18:04 ok ainult Doppleri võtmega.
 - Kõrvalparandused tehtud: kõik 7 salajase võtme võrdlust konstantse ajaga ja fail-closed (`map-chat` oli fail-open,
   `x-stats` võttis vastu „Bearer undefined"); `middleware.ts` → `proxy.ts`.
   Prodis kontrollitud: leht ilma sessioonita → /login, vale võtmed → 401, päris konto/sites push → 200.
