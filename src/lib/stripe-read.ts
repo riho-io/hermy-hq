@@ -65,7 +65,14 @@ export type FetchLike = (
 ) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 
 // Which balance-transaction categories count as revenue, and how they are labelled.
-const KIND: Record<string, RecentTxn['kind']> = { charge: 'payment', refund: 'refund', dispute: 'dispute' };
+// Reversals carry their own (positive) sign, so a won dispute or a failed refund gives the money back.
+const KIND: Record<string, RecentTxn['kind']> = {
+  charge: 'payment',
+  refund: 'refund',
+  refund_failure: 'refund',
+  dispute: 'dispute',
+  dispute_reversal: 'dispute',
+};
 
 // Months as fractions of a month, for MRR.
 const PER_MONTH: Record<string, number> = { day: 365 / 12, week: 52 / 12, month: 1, year: 1 / 12 };

@@ -19,6 +19,24 @@ test('tallinnBounds uses Tallinn midnight (EEST, UTC+3 in October)', () => {
   assert.equal(b.prevMonthStart.toISOString(), '2026-08-31T21:00:00.000Z');
 });
 
+test('tallinnBounds across the October DST switch', () => {
+  assert.equal(tallinnBounds(new Date('2026-10-25T12:00:00Z')).todayStart.toISOString(), '2026-10-24T21:00:00.000Z');
+  assert.equal(tallinnBounds(new Date('2026-10-26T12:00:00Z')).todayStart.toISOString(), '2026-10-25T22:00:00.000Z');
+});
+
+test('dispute and its reversal cancel out; failed refund gives the money back', () => {
+  const s = summarizeRevenue(
+    [
+      txn('d1', 'dispute', -1000, -2500, '2026-10-03T10:00:00Z'),
+      txn('d2', 'dispute_reversal', 1000, 2500, '2026-10-04T10:00:00Z'),
+      txn('r1', 'refund', -500, -500, '2026-10-05T10:00:00Z'),
+      txn('r2', 'refund_failure', 500, 500, '2026-10-05T11:00:00Z'),
+    ],
+    [], [], new Date('2026-10-07T12:00:00Z'),
+  );
+  assert.deepEqual(s.thisMonth, { count: 0, gross: { eur: 0 }, net: { eur: 0 } });
+});
+
 test('tallinnBounds handles January (previous month in previous year, EET UTC+2)', () => {
   const b = tallinnBounds(new Date('2027-01-15T10:00:00Z'));
   assert.equal(b.thisMonthStart.toISOString(), '2026-12-31T22:00:00.000Z');
