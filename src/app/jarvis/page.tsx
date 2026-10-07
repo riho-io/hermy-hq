@@ -169,7 +169,7 @@ export default async function JarvisPage() {
                 <WikiStat label="üksikud" value={d.wiki.counts.orphans} />
                 <WikiStat label="täna muudetud" value={d.wiki.changedToday} />
               </dl>
-              <WikiGraphView graph={d.wiki.graph} />
+              <WikiGraphView graph={d.wiki.graph} version={d.wiki.generatedAt.toISOString()} />
             </Panel>
             <Panel className="p-5">
               <Eyebrow>Viimati muudetud</Eyebrow>
@@ -270,9 +270,9 @@ function Legend({ color, ring, label }: { color?: string; ring?: boolean; label:
 
 function WikiStat({ label, value }: { label: string; value: number }) {
   return (
-    <div>
-      <dd className="num text-[22px] font-semibold leading-none tracking-[-0.02em] text-[var(--text)]">{value}</dd>
+    <div className="flex flex-col-reverse">
       <dt className="mt-1 text-[11.5px] text-[var(--text-3)]">{label}</dt>
+      <dd className="num text-[22px] font-semibold leading-none tracking-[-0.02em] text-[var(--text)]">{value}</dd>
     </div>
   );
 }

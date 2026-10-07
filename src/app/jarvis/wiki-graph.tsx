@@ -1,11 +1,13 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type ForceGraphInstance from 'force-graph';
+import type { NodeObject } from 'force-graph';
 import type { WikiGraph } from '@/lib/wiki-graph';
 import { obsidianUrl } from '@/lib/wiki-graph';
 
 type ColorMode = 'folder' | 'editor';
-type GNode = { id: string; title: string; folder: string; editedBy: 'pc' | 'argo' | null; ghost: boolean; deg: number };
+type GNode = NodeObject & { id: string; title: string; folder: string; editedBy: 'pc' | 'argo' | null; ghost: boolean; deg: number };
 
 // Fixed palette so a folder keeps its colour between visits; unknown folders fall back to grey.
 const FOLDER_COLORS: Record<string, string> = {
@@ -23,14 +25,18 @@ const FOLDER_COLORS: Record<string, string> = {
 const EDITOR_COLORS = { pc: '#6ea8fe', argo: '#f5c451', none: '#4b4e54' };
 const GHOST = '#3a3d42';
 
-export function WikiGraphView({ graph }: { graph: WikiGraph }) {
+export function WikiGraphView({ graph, version }: { graph: WikiGraph; version: string }) {
   const box = useRef<HTMLDivElement>(null);
-  const fg = useRef<any>(null);
+  const fg = useRef<ForceGraphInstance<GNode> | null>(null);
+  // Last node objects handed to force-graph (it mutates x/y/vx/vy in place), so a rebuilt graph can start from them.
+  const prevNodes = useRef<GNode[]>([]);
   const [mode, setMode] = useState<ColorMode>('folder');
   const [showSessions, setShowSessions] = useState(false);
   const [ready, setReady] = useState(false);
 
   // Nodes + links for the current filter; unresolved targets become small grey "ghost" nodes.
+  // Keyed on `version` (snapshot timestamp), not `graph`: the 60 s router.refresh() hands over a new but identical
+  // object each time, which would restart the layout.
   const data = useMemo(() => {
     const keep = graph.notes.filter((n) => showSessions || n.folder !== 'sessions');
     const ids = new Set(keep.map((n) => n.id));
@@ -55,8 +61,16 @@ export function WikiGraphView({ graph }: { graph: WikiGraph }) {
       ...keep.map((n) => ({ id: n.id, title: n.title, folder: n.folder, editedBy: n.editedBy, ghost: false, deg: deg.get(n.id) ?? 0 })),
       ...ghosts.values(),
     ];
+    // Carry positions over by id so a new snapshot or the sessions/ toggle doesn't scatter nodes that already have one.
+    const prev = new Map(prevNodes.current.map((n) => [n.id, n]));
+    for (const n of nodes) {
+      const p = prev.get(n.id);
+      if (p) Object.assign(n, { x: p.x, y: p.y, vx: p.vx, vy: p.vy });
+    }
+    prevNodes.current = nodes;
     return { nodes, links };
-  }, [graph, showSessions]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `graph` is read only when `version` (its snapshot id) changes
+  }, [version, showSessions]);
 
   const colorOf = useMemo(
     () => (n: GNode) => {
@@ -73,15 +87,15 @@ export function WikiGraphView({ graph }: { graph: WikiGraph }) {
     let ro: ResizeObserver | undefined;
     import('force-graph').then(({ default: ForceGraph }) => {
       if (cancelled || !box.current) return;
-      const g = new ForceGraph(box.current)
+      const g = new ForceGraph<GNode>(box.current)
         .backgroundColor('rgba(0,0,0,0)')
         .nodeId('id')
-        .nodeLabel((n: any) => (n.ghost ? `${n.title} — lahendamata` : `${n.title} · ${n.folder || 'juur'}`))
-        .nodeVal((n: any) => (n.ghost ? 0.4 : 1 + Math.sqrt(n.deg)))
+        .nodeLabel((n) => (n.ghost ? `${n.title} — lahendamata` : `${n.title} · ${n.folder || 'juur'}`))
+        .nodeVal((n) => (n.ghost ? 0.4 : 1 + Math.sqrt(n.deg)))
         .linkColor(() => 'rgba(255,255,255,0.08)')
         .linkWidth(0.5)
         .cooldownTicks(200)
-        .onNodeClick((n: any) => {
+        .onNodeClick((n) => {
           if (!n.ghost) window.location.href = obsidianUrl(n.id);
         })
         .width(box.current.clientWidth)
@@ -96,13 +110,21 @@ export function WikiGraphView({ graph }: { graph: WikiGraph }) {
       ro?.disconnect();
       fg.current?._destructor?.();
       fg.current = null;
+      // The destructor leaves the old canvas in the DOM; clear it so a re-run (StrictMode, Fast Refresh) starts clean.
+      box.current?.replaceChildren();
+      setReady(false);
     };
   }, []);
 
   // Data and colour changes reuse the same canvas; `ready` flips once the lazy import has created it.
   useEffect(() => {
-    if (ready) fg.current?.graphData(data).nodeColor(colorOf);
-  }, [ready, data, colorOf]);
+    if (ready) fg.current?.graphData(data);
+  }, [ready, data]);
+
+  // Separate so a colour toggle only repaints and doesn't re-heat the simulation.
+  useEffect(() => {
+    if (ready) fg.current?.nodeColor(colorOf);
+  }, [ready, colorOf]);
 
   return (
     <div>
