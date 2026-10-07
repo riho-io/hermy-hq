@@ -631,3 +631,18 @@ model SourceHeartbeat {
   @@map("source_heartbeat")
   @@schema("hermyhq")
 }
+
+// Jarvis "Masin": the whole wiki graph as one jsonb row per source; Argo replaces it hourly.
+model WikiSnapshot {
+  source          String    @id // "wiki" = the Syncthing-shared vault
+  graph           Json // { notes: WikiNote[], unresolved: { from, target }[] }
+  noteCount       Int       @map("note_count")
+  linkCount       Int       @map("link_count")
+  unresolvedCount Int       @map("unresolved_count")
+  orphanCount     Int       @map("orphan_count")
+  pcLastSeenAt    DateTime? @map("pc_last_seen_at")
+  generatedAt     DateTime  @default(now()) @map("generated_at")
+
+  @@map("wiki_snapshot")
+  @@schema("hermyhq")
+}
