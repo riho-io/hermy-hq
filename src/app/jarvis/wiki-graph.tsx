@@ -90,7 +90,9 @@ export function WikiGraphView({ graph, version }: { graph: WikiGraph; version: s
       const g = new ForceGraph<GNode>(box.current)
         .backgroundColor('rgba(0,0,0,0)')
         .nodeId('id')
-        .nodeLabel((n) => (n.ghost ? `${n.title} — lahendamata` : `${n.title} · ${n.folder || 'juur'}`))
+        .nodeLabel((n) => (n.ghost
+            ? `${n.title} — lahendamata`
+            : `${n.title} · ${n.folder || 'juur'}${n.editedBy ? ` · ${n.editedBy === 'pc' ? 'PC' : 'Argo'}` : ''}`))
         .nodeVal((n) => (n.ghost ? 0.4 : 1 + Math.sqrt(n.deg)))
         .linkColor(() => 'rgba(255,255,255,0.08)')
         .linkWidth(0.5)
@@ -100,6 +102,8 @@ export function WikiGraphView({ graph, version }: { graph: WikiGraph; version: s
         })
         .width(box.current.clientWidth)
         .height(box.current.clientHeight);
+      // Touch: a full-width canvas would trap page scrolling; node taps still work.
+      if (window.matchMedia('(pointer: coarse)').matches) g.enableZoomInteraction(false).enablePanInteraction(false);
       fg.current = g;
       setReady(true);
       ro = new ResizeObserver(([e]) => g.width(e.contentRect.width).height(e.contentRect.height));

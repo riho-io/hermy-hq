@@ -186,10 +186,19 @@ def read_secret():
         return None
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    # Never follow a 3xx: urllib would re-send the POST (with x-ingest-secret) to the redirect target.
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
 def push(payload, secret):
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(URL, data=body, method="POST", headers={"Content-Type": "application/json", "x-ingest-secret": secret})
-    with urllib.request.urlopen(req, timeout=TIMEOUT_S) as r:
+    with _OPENER.open(req, timeout=TIMEOUT_S) as r:
         r.read()
 
 

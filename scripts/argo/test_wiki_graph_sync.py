@@ -93,5 +93,41 @@ class WriteState(unittest.TestCase):
                 w.STATE_FILE = old
 
 
+class PushNoRedirect(unittest.TestCase):
+    def test_redirect_not_followed(self):
+        import http.server
+        import threading
+        import urllib.error
+
+        seen = []
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                seen.append(self.path)
+                self.rfile.read(int(self.headers.get("Content-Length", 0)))
+                self.send_response(302)
+                self.send_header("Location", "/elsewhere")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, *a):
+                pass
+
+        srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+        t = threading.Thread(target=srv.serve_forever, daemon=True)
+        t.start()
+        old = w.URL
+        w.URL = f"http://127.0.0.1:{srv.server_port}/ingest"
+        try:
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                w.push({"a": 1}, "s")
+            self.assertEqual(cm.exception.code, 302)
+            self.assertEqual(seen, ["/ingest"])
+        finally:
+            w.URL = old
+            srv.shutdown()
+            srv.server_close()
+
+
 if __name__ == "__main__":
     unittest.main()

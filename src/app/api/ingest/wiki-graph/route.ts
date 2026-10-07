@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
           detail: `${counts.notes} märget`,
           expectedEveryMin: WIKI_EXPECTED_EVERY_MIN,
         },
-        update: { lastAttemptAt: now, lastOkAt: now, ok: true, detail: `${counts.notes} märget` },
+        update: { lastAttemptAt: now, lastOkAt: now, ok: true, detail: `${counts.notes} märget`, expectedEveryMin: WIKI_EXPECTED_EVERY_MIN },
       }),
     ]);
   } catch (err) {
