@@ -78,3 +78,22 @@ test('summarize sorts recent by mtime and counts today in Tallinn time', () => {
 test('obsidianUrl strips .md and encodes the path', () => {
   assert.equal(obsidianUrl('projects/Õpe ja töö.md'), 'obsidian://open?vault=wiki&file=projects%2F%C3%95pe%20ja%20t%C3%B6%C3%B6');
 });
+
+test('title is clipped by code point, never leaving a lone surrogate', () => {
+  const n = { ...note('a.md'), title: 'x'.repeat(199) + '😀' + 'tail' };
+  const t = WikiPayload.parse(payload([n])).notes[0].title;
+  assert.equal([...t].length, 200);
+  assert.ok(t.isWellFormed());
+});
+
+test('title loses NUL and lone surrogates so jsonb accepts it', () => {
+  const n = { ...note('a.md'), title: 'a\u0000b\uD800c' };
+  const t = WikiPayload.parse(payload([n])).notes[0].title;
+  assert.equal(t, 'ab�c');
+  assert.ok(t.isWellFormed());
+  assert.ok(!t.includes('\u0000'));
+});
+
+test('note id containing NUL is rejected', () => {
+  assert.throws(() => WikiPayload.parse(payload([note('a\u0000b.md')])));
+});

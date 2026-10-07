@@ -15,15 +15,26 @@ const noteId = z
   .min(4)
   .max(300)
   .refine(
-    (s) => s.endsWith('.md') && !s.startsWith('/') && !s.includes('\\') && !s.split('/').includes('..'),
+    (s) =>
+      s.endsWith('.md') &&
+      !s.startsWith('/') &&
+      !s.includes('\\') &&
+      !s.split('/').includes('..') &&
+      !/[\u0000-\u001f]/.test(s) &&
+      s.isWellFormed(),
     'invalid note id',
   );
 const ts = z
   .string()
   .max(40)
   .refine((s) => !Number.isNaN(Date.parse(s)), 'invalid timestamp');
-// Long free text is clipped, not rejected, so one odd filename can't block the whole sync.
-const clipped = (max: number) => z.string().max(2000).transform((s) => s.slice(0, max));
+// Long free text is clipped, not rejected, so one odd filename can't block the whole sync
+// (text is made jsonb-safe first: no lone surrogates, no NUL, clipped by code point).
+const clipped = (max: number) =>
+  z
+    .string()
+    .max(2000)
+    .transform((s) => [...s.toWellFormed().replaceAll('\0', '')].slice(0, max).join(''));
 
 const Note = z.object({
   id: noteId,
