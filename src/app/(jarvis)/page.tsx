@@ -3,7 +3,7 @@ import { getJarvisData, TRACK_FUTURE_H, TRACK_PAST_H, type Source } from '@/lib/
 import { obsidianUrl } from '@/lib/wiki-graph';
 import { AutoRefresh } from './auto-refresh';
 import { DayTrack } from './day-track';
-import { fmtAgo, fmtHeading, fmtWhen } from './format';
+import { fmtAgo, fmtHeading, fmtMoney, fmtWhen } from './format';
 import { WikiGraphView } from './wiki-graph';
 
 // Live data on every request: Argo pushes every 5 min and the page must never show a cached state.
@@ -51,7 +51,23 @@ export default async function JarvisPage() {
             }
             tone={today.pmlLastAt && now.getTime() - today.pmlLastAt.getTime() > 7 * 86_400_000 ? 'warn' : undefined}
           />
-          <TodayCell label="dubly.me maksed täna" value="—" sub="Stripe ühendamata" muted className="border-l" />
+          {d.revenue.state === 'ok' ? (
+            <TodayCell
+              label="dubly.me maksed täna"
+              value={String(d.revenue.summary.today.count)}
+              sub={`${fmtMoney(d.revenue.summary.today.net)} neto · kuu ${fmtMoney(d.revenue.summary.thisMonth.net)}`}
+              className="border-l"
+            />
+          ) : (
+            <TodayCell
+              label="dubly.me maksed täna"
+              value="—"
+              sub={d.revenue.state === 'off' ? 'Stripe ühendamata' : 'Stripe viga'}
+              tone={d.revenue.state === 'error' ? 'warn' : undefined}
+              muted={d.revenue.state === 'off'}
+              className="border-l"
+            />
+          )}
           <TodayCell
             label="Kontode probleemid"
             value={String(today.kontoProblems)}
@@ -90,6 +106,53 @@ export default async function JarvisPage() {
           ))}
         </ul>
       </section>
+
+      {/* RAHA — dubly.me revenue from Stripe (net after fees; gross in brackets) */}
+      {d.revenue.state === 'ok' && (
+        <section aria-labelledby="money-h" className="hq-rise mt-12">
+          <div className="flex flex-wrap items-baseline justify-between gap-2 mb-4">
+            <h2 id="money-h" className="eyebrow">Raha · dubly.me</h2>
+            <p className="text-[11.5px] text-[var(--text-3)]">
+              Stripe {fmtAgo(new Date(d.revenue.fetchedAt), now)} · neto pärast tasusid
+            </p>
+          </div>
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] items-start">
+            <Panel className="p-5 min-w-0">
+              <dl className="grid grid-cols-2 sm:grid-cols-3 gap-5">
+                <MoneyStat label="see kuu" value={fmtMoney(d.revenue.summary.thisMonth.net)}
+                  sub={`bruto ${fmtMoney(d.revenue.summary.thisMonth.gross)} · ${d.revenue.summary.thisMonth.count} makset`} />
+                <MoneyStat label="eelmine kuu" value={fmtMoney(d.revenue.summary.prevMonth.net)}
+                  sub={`bruto ${fmtMoney(d.revenue.summary.prevMonth.gross)} · ${d.revenue.summary.prevMonth.count} makset`} />
+                <MoneyStat label="MRR" value={fmtMoney(d.revenue.summary.mrr)} sub="ilma allahindlusteta" />
+                <MoneyStat label="aktiivsed tellijad" value={String(d.revenue.summary.activeSubs)} />
+                <MoneyStat label="tühistatud see kuu" value={String(d.revenue.summary.canceledThisMonth)} />
+              </dl>
+            </Panel>
+            <Panel className="p-5">
+              <Eyebrow>Viimased maksed</Eyebrow>
+              {d.revenue.summary.recent.length ? (
+                <ul className="mt-3 space-y-2.5">
+                  {d.revenue.summary.recent.map((r) => (
+                    <li key={r.id} className="flex items-baseline justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className={`text-[13px] font-medium num ${r.net < 0 ? 'text-[var(--down)]' : 'text-[var(--text)]'}`}>
+                          {fmtMoney({ [r.currency]: r.net })}
+                        </p>
+                        <p className="text-[11.5px] text-[var(--text-3)]">
+                          {r.kind === 'payment' ? 'makse' : r.kind === 'refund' ? 'tagasimakse' : 'vaidlus'} · bruto {fmtMoney({ [r.currency]: r.amount })}
+                        </p>
+                      </div>
+                      <span className="shrink-0 text-[11.5px] num text-[var(--text-3)]">{fmtWhen(new Date(r.at), now)}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-3 text-[13px] text-[var(--text-3)]">Maksed puuduvad (eelmine ja see kuu).</p>
+              )}
+            </Panel>
+          </div>
+        </section>
+      )}
 
       {/* AGENT — the day track carries every job; the side card answers "what now?" */}
       <section className="hq-rise mt-12 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] items-start">
@@ -272,6 +335,18 @@ function WikiStat({ label, value }: { label: string; value: number }) {
   return (
     <div className="flex flex-col-reverse">
       <dt className="mt-1 text-[11.5px] text-[var(--text-3)]">{label}</dt>
+      <dd className="num text-[22px] font-semibold leading-none tracking-[-0.02em] text-[var(--text)]">{value}</dd>
+    </div>
+  );
+}
+
+function MoneyStat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="flex flex-col-reverse">
+      <dt className="mt-1 text-[11.5px] text-[var(--text-3)]">
+        {label}
+        {sub && <span className="block text-[var(--text-4)]">{sub}</span>}
+      </dt>
       <dd className="num text-[22px] font-semibold leading-none tracking-[-0.02em] text-[var(--text)]">{value}</dd>
     </div>
   );

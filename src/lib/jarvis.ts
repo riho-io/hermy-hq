@@ -1,5 +1,6 @@
 import { summarizeWiki, type WikiGraph, type WikiNote } from '@/lib/wiki-graph';
 import { prisma } from '@/lib/prisma';
+import { getDublyRevenue, type DublyRevenue } from '@/lib/stripe-dubly';
 
 // Data for the /jarvis page. Read-only; everything here is written by Argo (ingest) or other apps.
 
@@ -49,6 +50,7 @@ export interface JarvisData {
     kontoProblemNames: string[];
   };
   sources: Source[];
+  revenue: DublyRevenue;
   hermes: {
     reportedAt: Date | null;
     jobs: JobRow[];
@@ -82,7 +84,7 @@ interface KontoPayload {
 export async function getJarvisData(): Promise<JarvisData> {
   const now = new Date();
 
-  const [heartbeat, jobs, runs, konto, sites, pmlRows, wikiRow, wikiBeat] = await Promise.all([
+  const [heartbeat, jobs, runs, konto, sites, pmlRows, wikiRow, wikiBeat, revenue] = await Promise.all([
     prisma.sourceHeartbeat.findUnique({ where: { source: 'hermes' } }),
     prisma.agentJob.findMany({ where: { source: 'argo' } }),
     prisma.agentJobRun.findMany({
@@ -95,6 +97,7 @@ export async function getJarvisData(): Promise<JarvisData> {
       SELECT today, last_7d, last_at FROM hermyhq.jarvis_pml_inquiry_stats`,
     prisma.wikiSnapshot.findUnique({ where: { source: 'wiki' } }),
     prisma.sourceHeartbeat.findUnique({ where: { source: 'wiki' } }),
+    getDublyRevenue(),
   ]);
 
   const pml = pmlRows[0] ?? { today: 0, last_7d: 0, last_at: null };
@@ -175,7 +178,19 @@ export async function getJarvisData(): Promise<JarvisData> {
       lastOkAt: pml.last_at,
       note: 'riho@pml.ee postkast',
     },
-    { key: 'stripe', label: 'Stripe · dubly.me', state: 'off', lastOkAt: null, note: 'ühendamata (etapp 4)' },
+    {
+      key: 'stripe',
+      label: 'Stripe · dubly.me',
+      // Asked live (10 min cache): green when the last read worked, grey without a key, yellow on a Stripe error.
+      state: revenue.state === 'ok' ? 'ok' : revenue.state === 'off' ? 'off' : 'stale',
+      lastOkAt: revenue.state === 'ok' ? new Date(revenue.fetchedAt) : null,
+      note:
+        revenue.state === 'ok'
+          ? `${revenue.summary.activeSubs} tellijat`
+          : revenue.state === 'off'
+            ? 'ühendamata (võti puudub)'
+            : 'Stripe viga — vt logi',
+    },
     { key: 'sisum-kulud', label: 'Sisum kulud', state: 'off', lastOkAt: null, note: 'allikas lahtine' },
     {
       key: 'wiki',
@@ -200,6 +215,7 @@ export async function getJarvisData(): Promise<JarvisData> {
       kontoProblemNames,
     },
     sources,
+    revenue,
     hermes: {
       reportedAt: heartbeat?.lastOkAt ?? null,
       jobs: rows,

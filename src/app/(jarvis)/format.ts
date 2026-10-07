@@ -28,3 +28,15 @@ export function fmtAgo(d: Date, now: Date): string {
 export function tallinnHour(d: Date): number {
   return Number(new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', hourCycle: 'h23' }).format(d));
 }
+
+const moneyFmt = new Map<string, Intl.NumberFormat>();
+
+/** "1 234,50 €" per currency, joined with " + " when there are several. Input is minor units. */
+export function fmtMoney(money: Record<string, number>): string {
+  const parts = Object.entries(money).map(([cur, minor]) => {
+    const code = cur.toUpperCase();
+    if (!moneyFmt.has(code)) moneyFmt.set(code, new Intl.NumberFormat('et-EE', { style: 'currency', currency: code }));
+    return moneyFmt.get(code)!.format(minor / 100);
+  });
+  return parts.length ? parts.join(' + ') : '0,00 €';
+}
