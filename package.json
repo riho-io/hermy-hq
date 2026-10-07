@@ -20,6 +20,7 @@
     "@types/formidable": "^3.4.6",
     "better-sqlite3": "^12.11.1",
     "drizzle-orm": "^0.45.2",
+    "force-graph": "^1.52.0",
     "formidable": "^3.5.4",
     "googleapis": "^171.4.0",
     "grammy": "^1.44.0",

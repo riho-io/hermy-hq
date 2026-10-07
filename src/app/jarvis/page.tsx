@@ -1,8 +1,10 @@
 import { Eyebrow, Panel, Pill } from '@/components/ui/kit';
 import { getJarvisData, TRACK_FUTURE_H, TRACK_PAST_H, type Source } from '@/lib/jarvis';
+import { obsidianUrl } from '@/lib/wiki-graph';
 import { AutoRefresh } from './auto-refresh';
 import { DayTrack } from './day-track';
 import { fmtAgo, fmtHeading, fmtWhen } from './format';
+import { WikiGraphView } from './wiki-graph';
 
 // Live data on every request: Argo pushes every 5 min and the page must never show a cached state.
 export const dynamic = 'force-dynamic';
@@ -148,6 +150,52 @@ export default async function JarvisPage() {
           </dl>
         </Panel>
       </section>
+
+      {/* MASIN — the Syncthing-shared wiki: size, health, what changed and who changed it */}
+      <section aria-labelledby="wiki-h" className="hq-rise mt-12">
+        <div className="flex flex-wrap items-baseline justify-between gap-2 mb-4">
+          <h2 id="wiki-h" className="eyebrow">Masin · wiki</h2>
+          <p className="text-[11.5px] text-[var(--text-3)]">
+            {d.wiki ? `seis ${fmtAgo(d.wiki.generatedAt, now)} · klõps avab Obsidianis` : 'Argo pole wikit veel saatnud'}
+          </p>
+        </div>
+        {d.wiki ? (
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] items-start">
+            <Panel className="p-5 min-w-0">
+              <dl className="grid grid-cols-3 sm:grid-cols-5 gap-4 mb-5">
+                <WikiStat label="märget" value={d.wiki.counts.notes} />
+                <WikiStat label="linki" value={d.wiki.counts.links} />
+                <WikiStat label="lahendamata" value={d.wiki.counts.unresolved} />
+                <WikiStat label="üksikud" value={d.wiki.counts.orphans} />
+                <WikiStat label="täna muudetud" value={d.wiki.changedToday} />
+              </dl>
+              <WikiGraphView graph={d.wiki.graph} />
+            </Panel>
+            <Panel className="p-5">
+              <Eyebrow>Viimati muudetud</Eyebrow>
+              <ul className="mt-3 space-y-2.5">
+                {d.wiki.recent.map((n) => (
+                  <li key={n.id}>
+                    <a href={obsidianUrl(n.id)} className="group block rounded focus-visible:outline-2 focus-visible:outline-[var(--accent)]">
+                      <p className="truncate text-[13px] font-medium text-[var(--text)] group-hover:text-[var(--accent)]">{n.title}</p>
+                      <p className="text-[11.5px] num text-[var(--text-3)]">
+                        {n.folder || 'juur'} · {fmtWhen(new Date(n.mtime), now)}
+                        {n.editedBy && ` · ${n.editedBy === 'pc' ? 'PC' : 'Argo'}`}
+                      </p>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+          </div>
+        ) : (
+          <Panel className="p-5">
+            <p className="py-6 text-center text-[13px] text-[var(--text-3)]">
+              Ühendamata. Kontrolli croni „hermy-hq wiki graaf (Jarvis)” serveris.
+            </p>
+          </Panel>
+        )}
+      </section>
     </div>
   );
 }
@@ -217,5 +265,14 @@ function Legend({ color, ring, label }: { color?: string; ring?: boolean; label:
       />
       {label}
     </span>
+  );
+}
+
+function WikiStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div>
+      <dd className="num text-[22px] font-semibold leading-none tracking-[-0.02em] text-[var(--text)]">{value}</dd>
+      <dt className="mt-1 text-[11.5px] text-[var(--text-3)]">{label}</dt>
+    </div>
   );
 }

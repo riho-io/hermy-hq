@@ -1,3 +1,4 @@
+import { summarizeWiki, type WikiGraph, type WikiNote } from '@/lib/wiki-graph';
 import { prisma } from '@/lib/prisma';
 
 // Data for the /jarvis page. Read-only; everything here is written by Argo (ingest) or other apps.
@@ -55,6 +56,14 @@ export interface JarvisData {
     lastDone: JobRow | null;
     failing: JobRow[];
   };
+  wiki: null | {
+    graph: WikiGraph;
+    counts: { notes: number; links: number; unresolved: number; orphans: number };
+    recent: WikiNote[];
+    changedToday: number;
+    generatedAt: Date;
+    pcLastSeenAt: Date | null;
+  };
 }
 
 const MIN = 60_000;
@@ -73,7 +82,7 @@ interface KontoPayload {
 export async function getJarvisData(): Promise<JarvisData> {
   const now = new Date();
 
-  const [heartbeat, jobs, runs, konto, sites, pmlRows] = await Promise.all([
+  const [heartbeat, jobs, runs, konto, sites, pmlRows, wikiRow, wikiBeat] = await Promise.all([
     prisma.sourceHeartbeat.findUnique({ where: { source: 'hermes' } }),
     prisma.agentJob.findMany({ where: { source: 'argo' } }),
     prisma.agentJobRun.findMany({
@@ -84,6 +93,8 @@ export async function getJarvisData(): Promise<JarvisData> {
     prisma.kontoCheck.findUnique({ where: { id: 'sites' } }),
     prisma.$queryRaw<{ today: number; last_7d: number; last_at: Date | null }[]>`
       SELECT today, last_7d, last_at FROM hermyhq.jarvis_pml_inquiry_stats`,
+    prisma.wikiSnapshot.findUnique({ where: { source: 'wiki' } }),
+    prisma.sourceHeartbeat.findUnique({ where: { source: 'wiki' } }),
   ]);
 
   const pml = pmlRows[0] ?? { today: 0, last_7d: 0, last_at: null };
@@ -116,6 +127,22 @@ export async function getJarvisData(): Promise<JarvisData> {
 
   const kontoProblems = kontoPayload.problems_count ?? kontoProblemNames.length;
   const sitesProblems = sitesPayload.problems_count ?? 0;
+
+  const wikiGraph = (wikiRow?.graph ?? null) as WikiGraph | null;
+  const wiki = wikiRow && wikiGraph
+    ? {
+        graph: wikiGraph,
+        counts: {
+          notes: wikiRow.noteCount,
+          links: wikiRow.linkCount,
+          unresolved: wikiRow.unresolvedCount,
+          orphans: wikiRow.orphanCount,
+        },
+        ...summarizeWiki(wikiGraph, now),
+        generatedAt: wikiRow.generatedAt,
+        pcLastSeenAt: wikiRow.pcLastSeenAt,
+      }
+    : null;
 
   const sources: Source[] = [
     {
@@ -150,8 +177,16 @@ export async function getJarvisData(): Promise<JarvisData> {
     },
     { key: 'stripe', label: 'Stripe · dubly.me', state: 'off', lastOkAt: null, note: 'ühendamata (etapp 4)' },
     { key: 'sisum-kulud', label: 'Sisum kulud', state: 'off', lastOkAt: null, note: 'allikas lahtine' },
-    { key: 'wiki-pc', label: 'Wiki · PC', state: 'off', lastOkAt: null, note: 'ühendamata (etapp 3)' },
-    { key: 'wiki-argo', label: 'Wiki · Argo', state: 'off', lastOkAt: null, note: 'ühendamata (etapp 3)' },
+    {
+      key: 'wiki',
+      label: 'Wiki',
+      // Argo pushes hourly; the window allows ~3 missed runs.
+      state: wikiBeat ? windowState(wikiBeat.lastOkAt, wikiBeat.expectedEveryMin, now) : 'off',
+      lastOkAt: wikiBeat?.lastOkAt ?? null,
+      note: wiki
+        ? `${wiki.counts.notes} märget · PC ${wiki.pcLastSeenAt ? `sünkis ${fmtAgoShort(wiki.pcLastSeenAt, now)}` : 'pole näha'}`
+        : 'ühendamata',
+    },
   ];
 
   return {
@@ -172,5 +207,13 @@ export async function getJarvisData(): Promise<JarvisData> {
       lastDone,
       failing: rows.filter((r) => r.failing),
     },
+    wiki,
   };
+}
+
+function fmtAgoShort(d: Date, now: Date): string {
+  const min = Math.round((now.getTime() - d.getTime()) / MIN);
+  if (min < 60) return `${Math.max(min, 0)} min tagasi`;
+  const h = Math.round(min / 60);
+  return h < 48 ? `${h} h tagasi` : `${Math.round(h / 24)} p tagasi`;
 }
