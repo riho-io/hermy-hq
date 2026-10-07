@@ -28,7 +28,7 @@ Turvaaudit: `V:\projects\hermes\docs\hermy-hq-audit-2026-09-24.md` (tingimus 1 t
 - `hermyhq` skeem: Prisma tabelid, omanik roll `hermyhq`. **RLS väljas**, aga skeem pole PostgREST-is
   avatud (`pgrst.db_schemas` ei sisalda seda) ja `anon`/`authenticated` ei saa `USAGE` õigust.
   Ära lisa `hermyhq` skeemi API exposed-schemas nimekirja ega anna anon-õigusi.
-- Elus andmed: `DataStore.metric-snapshots`, `konto_check`, `Reminder`. Kõik `hermes-*` võtmed külmunud 13.08.
+- Elus andmed: `DataStore.metric-snapshots`, `konto_check`, `Reminder`, `agent_job*` + `source_heartbeat` (Argo cron 5 min), `wiki_snapshot` (Argo `wiki_graph_sync.py`, iga 60 min). Kõik `hermes-*` võtmed külmunud 13.08.
 - `hermy_hq` skeem (eraldi, RLS sees, REST-is avatud): vanem Supabase-katse — `status_snapshot`
   (jobs + spend, viimane 10.08), `briefs`, `tasks`, `approvals`. Seda repo kood ei kasuta.
 - Vercelis on ka `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`, aga kood neid ei kasuta.

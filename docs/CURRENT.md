@@ -1,6 +1,6 @@
 # CURRENT — hermy-hq → „Jarvis"
 
-**Uuendatud:** 2026-10-06 · **Seis:** plaan, koodi pole alustatud. Riho vaatab üle → siis etapp 1.
+**Uuendatud:** 2026-10-07 · **Seis:** etapid 1–3 valmis ja prodis. Järgmine: avalehe vahetus või etapp 4 (raha).
 
 ## Eesmärk
 
@@ -117,6 +117,29 @@ Tehtud enne commiti:
 
 Kõrvalleid (teine projekt, puutumata):
 - Supabase `projektid`: loader'i `set_plan_by_email` jt anon-le kutsutavad — juba teada, `task_14eff2a7`, endiselt lahti.
+
+## Etapp 3 — VALMIS 07.10 (`777d6c2`…`a4e0a13`)
+
+Spec `docs/superpowers/specs/2026-10-07-wiki-graph-design.md`, plaan `docs/superpowers/plans/2026-10-07-wiki-graph.md`.
+
+**Muutus plaanis:** PC `V:/projects/wiki` ja Argo `~/wiki` on **üks vault** (Syncthing, kaust `wiki`). „Kaks wikit" → üks graaf,
+värv „kes muutis" tuleb Syncthingi `modifiedBy`-st (oma seade = Argo, teine = PC). PC-s midagi ei jookse.
+
+- DB: `hermyhq.wiki_snapshot` (üks jsonb rida, RLS + 4 poliitikat ainult `hermyhq`; anon/authenticated ilma õigusteta).
+- `POST /api/ingest/wiki-graph` — `INGEST_SECRET`, Zod (`src/lib/wiki-graph.ts`, testid `npx tsx --test src/lib/wiki-graph.test.ts`), 2 MB,
+  tekst jsonb-kindel (surrogaadid, NUL). Heartbeat `wiki`, aken 180 min.
+- Argo: `~/.hermes/scripts/wiki_graph_sync.py` (allikas `scripts/argo/`, testid `python -m unittest test_wiki_graph_sync`),
+  cron `a13fe5314bca` every 60m, no-agent, `--failure-deliver local`. Sisu ei saadeta — ainult teed, pealkirjad, lingid, mtime.
+  Ümbersuunamist ei järgita (võti ei leki).
+- `/jarvis` plokk „Masin · wiki": arvud, force-graph (värv kategooria / kes muutis, sessions/ lüliti, klõps → `obsidian://`),
+  „Viimati muudetud" 10 tk; allikates üks „Wiki" („PC sünkis X tagasi"). Graaf ei hüppa 60 s värskenduse peale (memo `generatedAt` järgi).
+
+Kontrollitud prodis 07.10: 453 märget (= `find`), 692 linki, 7 lahendamata, 300 üksikut, PC 218 / Argo 235; lülitid töötavad;
+`hermes cron run` ok, ajastatud jooks 12:06 ok. **Kontrollimata:** telefonilaius (brauseri akent ei saanud kitsamaks) —
+puuteseadmel on graafi suum/lohistamine välja lülitatud, et leht keriks.
+
+Lahtised väikesed (lõpparvustus, ei blokeeri): migratsiooni SQL pole repos (nagu etapp 1); `main()` oleku-muutuse printimine testimata.
+300/453 märget on üksikud — enamasti `sessions/` ja `references/` (lingid puuduvad), see on wiki enda seis, mitte viga.
 
 ## AI-võimalused (scan)
 
