@@ -55,7 +55,8 @@ export default async function JarvisPage() {
             <TodayCell
               label="dubly.me maksed täna"
               value={String(d.revenue.summary.today.count)}
-              sub={`${fmtMoney(d.revenue.summary.today.net)} neto · kuu ${fmtMoney(d.revenue.summary.thisMonth.net)}`}
+              sub={`${now.getTime() - new Date(d.revenue.fetchedAt).getTime() > 30 * 60_000 ? 'vana · ' : ''}${fmtMoney(d.revenue.summary.today.net)} neto · kuu ${fmtMoney(d.revenue.summary.thisMonth.net)}`}
+              tone={now.getTime() - new Date(d.revenue.fetchedAt).getTime() > 30 * 60_000 ? 'warn' : undefined}
               className="border-l"
             />
           ) : (
@@ -132,8 +133,8 @@ export default async function JarvisPage() {
               <Eyebrow>Viimased maksed</Eyebrow>
               {d.revenue.summary.recent.length ? (
                 <ul className="mt-3 space-y-2.5">
-                  {d.revenue.summary.recent.map((r) => (
-                    <li key={r.id} className="flex items-baseline justify-between gap-3">
+                  {d.revenue.summary.recent.map((r, i) => (
+                    <li key={`${r.at}-${i}`} className="flex items-baseline justify-between gap-3">
                       <div className="min-w-0">
                         <p className={`text-[13px] font-medium num ${r.net < 0 ? 'text-[var(--down)]' : 'text-[var(--text)]'}`}>
                           {fmtMoney({ [r.currency]: r.net })}

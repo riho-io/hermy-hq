@@ -181,8 +181,9 @@ export async function getJarvisData(): Promise<JarvisData> {
     {
       key: 'stripe',
       label: 'Stripe · dubly.me',
-      // Asked live (10 min cache): green when the last read worked, grey without a key, yellow on a Stripe error.
-      state: revenue.state === 'ok' ? 'ok' : revenue.state === 'off' ? 'off' : 'stale',
+      // 10 min cache served stale-while-revalidate: a failing refresh keeps the old value, so green only while
+      // fetchedAt is fresh (30 min = three missed refreshes); grey without a key, yellow on a Stripe error.
+      state: revenue.state === 'ok' ? windowState(new Date(revenue.fetchedAt), 30, now) : revenue.state === 'off' ? 'off' : 'stale',
       lastOkAt: revenue.state === 'ok' ? new Date(revenue.fetchedAt) : null,
       note:
         revenue.state === 'ok'

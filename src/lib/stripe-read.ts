@@ -5,6 +5,7 @@ const API = 'https://api.stripe.com/v1';
 const TZ = 'Europe/Tallinn';
 const MAX_PAGES = 20;
 const RECENT_LIMIT = 10;
+const TIMEOUT_MS = 8000;
 
 export type Money = Record<string, number>; // currency -> minor units
 
@@ -41,7 +42,6 @@ export interface Period {
 }
 
 export interface RecentTxn {
-  id: string;
   kind: 'payment' | 'refund' | 'dispute';
   amount: number;
   net: number;
@@ -61,7 +61,7 @@ export interface RevenueSummary {
 
 export type FetchLike = (
   url: string,
-  init: { headers: Record<string, string> },
+  init: { headers: Record<string, string>; signal?: AbortSignal },
 ) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 
 // Which balance-transaction categories count as revenue, and how they are labelled.
@@ -140,7 +140,6 @@ export function summarizeRevenue(txns: StripeTxn[], liveSubs: StripeSub[], cance
     .sort((a, b) => b.created - a.created)
     .slice(0, RECENT_LIMIT)
     .map((t) => ({
-      id: t.id,
       kind: KIND[t.reporting_category],
       amount: t.amount,
       net: t.net,
@@ -164,7 +163,13 @@ async function listAll<T extends { id?: string }>(path: string, params: Record<s
   let after: string | undefined;
   for (let page = 0; page < MAX_PAGES; page++) {
     const q = new URLSearchParams({ ...params, limit: '100', ...(after ? { starting_after: after } : {}) });
-    const res = await f(`${API}${path}?${q}`, { headers: { Authorization: `Bearer ${key}` } });
+    let res;
+    try {
+      res = await f(`${API}${path}?${q}`, { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(TIMEOUT_MS) });
+    } catch {
+      // Timeout or network failure: the original error is dropped so nothing but the path can reach the log.
+      throw new Error(`Stripe ${path} timeout`);
+    }
     // Only path + status in the message: never the key or the response body.
     if (!res.ok) throw new Error(`Stripe ${path} HTTP ${res.status}`);
     const body = (await res.json()) as { data: T[]; has_more: boolean };

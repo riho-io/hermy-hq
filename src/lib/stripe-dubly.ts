@@ -13,11 +13,12 @@ export type DublyRevenue =
 const cachedRead = unstable_cache(
   async () => {
     const now = new Date();
-    // A throw here is not cached, so a Stripe outage retries on the next request.
+    // A throw is not cached. After expiry Next serves the stale value while refreshing in the background and
+    // swallows background errors, so the caller judges staleness from fetchedAt, not from state alone.
     const summary = await readDublyStripe(process.env.STRIPE_DUBLY_READ_KEY ?? '', now);
     return { summary, fetchedAt: now.toISOString() };
   },
-  ['dubly-stripe-revenue-v1'],
+  ['dubly-stripe-revenue-v2'],
   { revalidate: 600 },
 );
 

@@ -57,7 +57,7 @@ test('summarize: today, this/prev month, refunds negative, non-revenue ignored',
   assert.deepEqual(s.today, { count: 2, net: { eur: 2820 } });
   assert.deepEqual(s.thisMonth, { count: 2, gross: { eur: 2000 }, net: { eur: 1820 } });
   assert.deepEqual(s.prevMonth, { count: 1, gross: { eur: 3000 }, net: { eur: 2820 } });
-  assert.deepEqual(s.recent.map((r) => [r.id, r.kind]), [['t1', 'payment'], ['t2', 'payment'], ['t3', 'refund'], ['t5', 'payment']]);
+  assert.deepEqual(s.recent.map((r) => r.net), [940, 1880, -1000, 2820]);
 });
 
 test('summarize keeps currencies apart', () => {
@@ -118,4 +118,16 @@ test('readDublyStripe refuses a full-access secret key and surfaces HTTP errors 
   await assert.rejects(readDublyStripe('sk_live_abc', new Date(), fakeFetch({}).impl), /restricted/);
   const failing = async () => ({ ok: false, status: 401, json: async () => ({}) });
   await assert.rejects(readDublyStripe('rk_test_x', new Date(), failing), (e: Error) => /HTTP 401/.test(e.message) && !e.message.includes('rk_test_x'));
+});
+
+test('readDublyStripe turns an aborted request into a keyless timeout error', async () => {
+  const aborting = async () => {
+    throw Object.assign(new Error('The operation was aborted due to timeout rk_test_x'), { name: 'TimeoutError' });
+  };
+  await assert.rejects(readDublyStripe('rk_test_x', new Date(), aborting), (e: Error) => /timeout/.test(e.message) && !e.message.includes('rk_test_x'));
+});
+
+test('readDublyStripe rejects instead of returning a partial sum after 20 pages', async () => {
+  const endless = async () => ({ ok: true, status: 200, json: async () => ({ data: [{ id: 'x' }], has_more: true }) });
+  await assert.rejects(readDublyStripe('rk_test_x', new Date(), endless), /more than 20 pages/);
 });
