@@ -1,6 +1,6 @@
 # CURRENT — hermy-hq → „Jarvis"
 
-**Uuendatud:** 2026-10-07 · **Seis:** etapid 1–3 valmis ja prodis, Jarvis on avaleht. Järgmine: etapp 4 (raha).
+**Uuendatud:** 2026-10-07 · **Seis:** etapid 1–3 valmis, Jarvis on avaleht; etapp 4a (dubly.me tulud) koodis valmis, ootab Stripe võtit.
 
 ## Eesmärk
 
@@ -140,6 +140,25 @@ puuteseadmel on graafi suum/lohistamine välja lülitatud, et leht keriks.
 
 Lahtised väikesed (lõpparvustus, ei blokeeri): migratsiooni SQL pole repos (nagu etapp 1); `main()` oleku-muutuse printimine testimata.
 300/453 märget on üksikud — enamasti `sessions/` ja `references/` (lingid puuduvad), see on wiki enda seis, mitte viga.
+
+## Etapp 4a — dubly.me tulud: KOOD VALMIS 07.10, ootab võtit (`f36b824`…`a24046f`)
+
+Spec `docs/superpowers/specs/2026-10-07-dubly-revenue-design.md`, plaan `docs/superpowers/plans/2026-10-07-dubly-revenue.md`.
+Etapp 4 jagatud: 4a tulud (see), hiljem kulud kulu-äpist, tehnika kulud (Argo LLM, dubly provider_usage, püsikulud), Sisumi kulude allikas.
+
+- `src/lib/stripe-read.ts` (puhas, 22 testi): balance_transactions alates eelmise kuu algusest (Tallinn), kategooriad
+  charge / refund / refund_failure / dispute / dispute_reversal; MRR active + past_due kuuks teisendatud (allahindlusteta,
+  trialing ja metered välja); tühistatud see kuu; >20 lk = viga; 8 s ajalõpp; vead ainult tee + HTTP kood; ainult `rk_` võti.
+- `src/lib/stripe-dubly.ts` (`server-only`): `STRIPE_DUBLY_READ_KEY`, `unstable_cache` 10 min (stale-while-revalidate →
+  allikas kollane, kui `fetchedAt` > 30 min).
+- Jarvis: TODAY „dubly.me maksed täna", allikas „Stripe · dubly.me", plokk „Raha · dubly.me" (see/eelmine kuu neto+bruto,
+  MRR, tellijad, tühistused, viimased 10 makset ilma kliendiandmeteta).
+- Prodis kontrollitud ilma võtmeta: lahter „Stripe ühendamata", allikas hall, „Raha" plokki pole, leht ei kuku.
+
+**Riho samm:** Stripe (Sisum OÜ) → restricted key „hermy-hq Jarvis (read)": **Balance: Read**, **Subscriptions: Read**, muu None →
+Vercel `STRIPE_DUBLY_READ_KEY` (Production, Sensitive) → redeploy. Siis võrrelda see kuu neto Stripe Balance'iga ja MRR Billingu omaga.
+
+Lahtised väikesed: `status=canceled` loeb kõik tühistused (piir ~2000); võrguviga kuvatakse logis kui „timeout".
 
 ## Avalehe vahetus — VALMIS 07.10
 
