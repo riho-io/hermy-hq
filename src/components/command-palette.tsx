@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   LayoutDashboard,
+  Radar,
   Twitter,
   FileText,
   Youtube,
@@ -32,7 +33,8 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
-  { label: "Töölaud", href: "/", icon: LayoutDashboard },
+  { label: "Jarvis", href: "/", icon: Radar },
+  { label: "Töölaud", href: "/toolaud", icon: LayoutDashboard },
   { label: "X", href: "/x", icon: Twitter },
   { label: "Artiklid", href: "/articles", icon: FileText },
   { label: "YouTube", href: "/youtube", icon: Youtube },

@@ -1,6 +1,6 @@
 # CURRENT — hermy-hq → „Jarvis"
 
-**Uuendatud:** 2026-10-07 · **Seis:** etapid 1–3 valmis ja prodis. Järgmine: avalehe vahetus või etapp 4 (raha).
+**Uuendatud:** 2026-10-07 · **Seis:** etapid 1–3 valmis ja prodis, Jarvis on avaleht. Järgmine: etapp 4 (raha).
 
 ## Eesmärk
 
@@ -140,6 +140,11 @@ puuteseadmel on graafi suum/lohistamine välja lülitatud, et leht keriks.
 
 Lahtised väikesed (lõpparvustus, ei blokeeri): migratsiooni SQL pole repos (nagu etapp 1); `main()` oleku-muutuse printimine testimata.
 300/453 märget on üksikud — enamasti `sessions/` ja `references/` (lingid puuduvad), see on wiki enda seis, mitte viga.
+
+## Avalehe vahetus — VALMIS 07.10
+
+`/` = Jarvis (kaust `src/app/(jarvis)/`, route group), Töölaud → `/toolaud` (menüüs alles). `/jarvis` → ajutine ümbersuunamine `/`-le
+(`next.config.ts`). Menüü, mobiili tabid, käsupalett ja breadcrumbs uuendatud. Sisselogimise järel jõuab kasutaja Jarvisesse.
 
 ## AI-võimalused (scan)
 

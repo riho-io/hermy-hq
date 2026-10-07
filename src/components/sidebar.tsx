@@ -32,8 +32,8 @@ const navGroups = [
   {
     name: "Ülevaade",
     items: [
-      { href: "/", label: "Töölaud", icon: Home },
-      { href: "/jarvis", label: "Jarvis", icon: Radar },
+      { href: "/", label: "Jarvis", icon: Radar },
+      { href: "/toolaud", label: "Töölaud", icon: Home },
       { href: "/hermes", label: "Hermes", icon: Cpu },
       { href: "/tasks", label: "Ülesanded", icon: ClipboardList },
       { href: "/reminders", label: "Meeldetuletused", icon: Bell },
@@ -73,7 +73,7 @@ const navGroups = [
 
 // Mobile tab bar - only show the 5 most important
 const mobileTabsRaw = [
-  { href: "/", label: "Töölaud", icon: Home },
+  { href: "/", label: "Jarvis", icon: Radar },
   { href: "/x", label: "X", icon: Twitter },
   { href: "/youtube", label: "YouTube", icon: Play },
   { href: "/ideas", label: "Ideed", icon: Lightbulb },
