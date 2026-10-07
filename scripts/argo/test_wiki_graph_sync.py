@@ -56,5 +56,42 @@ class BuildGraph(unittest.TestCase):
         self.assertEqual(g["unresolved"], [{"from": "projects/p.md", "target": "Ghost"}])
 
 
+class ValidId(unittest.TestCase):
+    def test_rejects_and_accepts(self):
+        self.assertTrue(w.valid_id("projects/a.md"))
+        self.assertFalse(w.valid_id("a\\b.md"))
+        self.assertFalse(w.valid_id("a\tb.md"))
+        self.assertFalse(w.valid_id("a\udcffb.md"))
+        self.assertFalse(w.valid_id("/a.md"))
+        self.assertFalse(w.valid_id("x/../a.md"))
+        self.assertFalse(w.valid_id(".md"))
+
+
+class ListNotes(unittest.TestCase):
+    def test_skips_invalid_ids(self):
+        with tempfile.TemporaryDirectory() as d:
+            v = Path(d)
+            (v / ".md").write_text("x", encoding="utf-8")
+            (v / "ok.md").write_text("x", encoding="utf-8")
+            long_dir = v / ("d" * 150) / ("e" * 150)
+            long_dir.mkdir(parents=True)
+            (long_dir / "n.md").write_text("x", encoding="utf-8")
+            ids = w.list_notes(v)
+        self.assertEqual(ids, ["ok.md"])
+
+
+class WriteState(unittest.TestCase):
+    def test_creates_missing_dir(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "nope" / "cron" / "state.json"
+            old = w.STATE_FILE
+            w.STATE_FILE = f
+            try:
+                w.write_state(True, None)
+                self.assertTrue(f.exists())
+            finally:
+                w.STATE_FILE = old
+
+
 if __name__ == "__main__":
     unittest.main()

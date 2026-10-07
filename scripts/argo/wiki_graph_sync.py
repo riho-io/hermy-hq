@@ -73,13 +73,27 @@ class Resolver:
         return candidates[0] if candidates else None
 
 
+def valid_id(i):
+    """Mirror of the route's noteId rule (src/lib/wiki-graph.ts) plus strict UTF-8, so one odd file can't 400 the push."""
+    if not (4 <= len(i) <= 300) or not i.endswith(".md") or i.startswith("/") or "\\" in i:
+        return False
+    if ".." in i.split("/") or any(ord(c) < 0x20 for c in i):
+        return False
+    try:
+        i.encode("utf-8")
+    except UnicodeEncodeError:  # surrogateescape'd non-UTF-8 filename
+        return False
+    return True
+
+
 def list_notes(vault):
     ids = []
     for p in vault.rglob("*.md"):
         rel = p.relative_to(vault)
         if any(part in SKIP_DIRS for part in rel.parts[:-1]) or ".bak" in p.name:
             continue
-        ids.append(rel.as_posix())
+        if valid_id(rel.as_posix()):
+            ids.append(rel.as_posix())
     return sorted(ids)
 
 
@@ -89,7 +103,11 @@ def build_graph(vault, edited_by):
     notes, unresolved = [], []
     for i in ids:
         path = vault / i
-        text = path.read_text(encoding="utf-8", errors="replace")
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+            mtime = path.stat().st_mtime
+        except FileNotFoundError:  # renamed/removed by Syncthing since listing
+            continue
         links = []
         for t in extract_links(text):
             r = resolver.resolve(t)
@@ -101,7 +119,7 @@ def build_graph(vault, edited_by):
             "id": i,
             "title": i.rsplit("/", 1)[-1][:-3],
             "folder": i.split("/", 1)[0] if "/" in i else "",
-            "mtime": datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat(),
+            "mtime": datetime.fromtimestamp(mtime, timezone.utc).isoformat(),
             "links": links[:MAX_LINKS_PER_NOTE],
             "editedBy": edited_by.get(i),
         })
@@ -126,9 +144,12 @@ def syncthing_info(ids):
         me = get("/rest/system/status")["myID"]
         edited = {}
         for i in ids:
-            q = urllib.parse.urlencode({"folder": folder, "file": i})
-            by = get(f"/rest/db/file?{q}").get("global", {}).get("modifiedBy", "")
-            edited[i] = None if not by else ("argo" if me.startswith(by) else "pc")
+            try:
+                q = urllib.parse.urlencode({"folder": folder, "file": i})
+                by = get(f"/rest/db/file?{q}").get("global", {}).get("modifiedBy", "")
+                edited[i] = None if not by else ("argo" if me.startswith(by) else "pc")
+            except Exception:  # noqa: BLE001 — one file's lookup failing must not drop the rest
+                edited[i] = None
 
         conns = get("/rest/system/connections").get("connections", {})
         stats = get("/rest/stats/device")
@@ -151,6 +172,7 @@ def read_state():
 
 
 def write_state(ok, detail):
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     STATE_FILE.write_text(json.dumps({"ok": ok, "detail": detail, "at": datetime.now(timezone.utc).isoformat()}), encoding="utf-8")
 
 
