@@ -1,44 +1,37 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
-import path from "path";
-import { execSync } from "child_process";
+import { fetchPublicText } from "@/lib/public-url";
 
-function callOpenAI(apiKey: string, payload: object, timeout = 45000): string {
-  const tmpFile = path.join("/tmp", `yt-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
-  fs.writeFileSync(tmpFile, JSON.stringify(payload));
-  try {
-    return execSync(
-      `curl -s -X POST "https://api.openai.com/v1/chat/completions" -H "Authorization: Bearer ${apiKey}" -H "Content-Type: application/json" -d @${tmpFile}`,
-      { timeout, encoding: "utf-8" }
-    );
-  } finally {
-    try { fs.unlinkSync(tmpFile); } catch { /* ok */ }
-  }
+async function callOpenAI(apiKey: string, payload: object, timeout = 45000): Promise<string> {
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(timeout),
+  });
+  return res.text();
 }
 
-function braveSearch(query: string, braveKey: string, count = 5): { title: string; url: string; description: string }[] {
+async function braveSearch(query: string, braveKey: string, count = 5): Promise<{ title: string; url: string; description: string }[]> {
   try {
     const searchUrl = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}`;
-    const res = execSync(
-      `curl -s "${searchUrl}" -H "Accept: application/json" -H "X-Subscription-Token: ${braveKey}"`,
-      { timeout: 10000, encoding: "utf-8" }
-    );
-    const data = JSON.parse(res);
+    const res = await fetch(searchUrl, {
+      headers: { Accept: "application/json", "X-Subscription-Token": braveKey },
+      signal: AbortSignal.timeout(10000),
+    });
+    const data = JSON.parse(await res.text());
     return (data.web?.results || []).map((r: any) => ({ title: r.title, url: r.url, description: r.description }));
   } catch {
     return [];
   }
 }
 
-function fetchArticle(url: string): string {
+async function fetchArticle(url: string): Promise<string> {
   try {
-    // Fetch the page and extract text content (strip HTML tags, limit to 3000 chars)
-    const raw = execSync(
-      `curl -s -L --max-time 10 "${url}" | sed 's/<script[^>]*>.*<\\/script>//g; s/<style[^>]*>.*<\\/style>//g; s/<[^>]*>//g' | head -c 5000`,
-      { timeout: 15000, encoding: "utf-8" }
-    );
-    // Clean up whitespace
-    return raw.replace(/\s+/g, " ").trim().slice(0, 3000);
+    // Fetch the page and extract text content (strip HTML tags, limit to 3000 chars).
+    // fetchPublicText refuses non-http(s) URLs and internal/private addresses.
+    const text = await fetchPublicText(url, { maxChars: 5000, timeoutMs: 10000 });
+    return text.slice(0, 3000);
   } catch {
     return "";
   }
@@ -93,14 +86,14 @@ Key patterns from feedback:
   // 1a. Fetch the primary source article if we have a sourceUrl
   if (sourceUrl) {
     sourceUrls.push(sourceUrl);
-    const articleText = fetchArticle(sourceUrl);
+    const articleText = await fetchArticle(sourceUrl);
     if (articleText) {
       sourceContext += `\n\n## PRIMARY SOURCE ARTICLE (from ${sourceUrl}):\n${articleText}`;
     }
   }
 
   // 1b. Generate search queries for additional context
-  const keyClaimsResult = callOpenAI(apiKey, {
+  const keyClaimsResult = await callOpenAI(apiKey, {
     model: "gpt-4o-mini",
     messages: [
       { role: "system", content: "Extract 3 specific search queries to verify and gather more context about this video topic. Return JSON: {\"queries\":[\"query1\",\"query2\",\"query3\"]}" },
@@ -119,7 +112,7 @@ Key patterns from feedback:
   // 1c. Run additional Brave searches
   for (const query of additionalQueries.slice(0, 3)) {
     if (!braveKey) break;
-    const results = braveSearch(query, braveKey, 3);
+    const results = await braveSearch(query, braveKey, 3);
     if (results.length > 0) {
       sourceContext += `\n\n## SEARCH: "${query}"\n${results.map(r => {
         sourceUrls.push(r.url);
@@ -193,7 +186,7 @@ OUTPUT FORMAT — valid JSON only:
   "factClaims": ["Claim 1: specific fact used in script", "Claim 2: ..."]
 }`;
 
-  const genResult = callOpenAI(apiKey, {
+  const genResult = await callOpenAI(apiKey, {
     model: "gpt-4o-mini",
     messages: [
       { role: "system", content: systemPrompt },
@@ -218,7 +211,7 @@ OUTPUT FORMAT — valid JSON only:
       const searchResults: string[] = [];
       for (const claim of factClaims.slice(0, 5)) {
         try {
-          const results = braveSearch(claim, braveKey, 3);
+          const results = await braveSearch(claim, braveKey, 3);
           const snippets = results.map(r => `${r.title}: ${r.description}`).join(" | ");
           searchResults.push(`Claim: ${claim}\nSearch results: ${snippets || "No results found"}`);
         } catch {
@@ -226,7 +219,7 @@ OUTPUT FORMAT — valid JSON only:
         }
       }
 
-      const checkResult = callOpenAI(apiKey, {
+      const checkResult = await callOpenAI(apiKey, {
         model: "gpt-4o-mini",
         messages: [
           { role: "system", content: `You are a strict fact-checker. You will receive claims paired with REAL web search results. Use ONLY the search results to determine if each claim is CORRECT, INCORRECT, or UNCERTAIN. Do NOT rely on your own knowledge — only what the search results show. Be very strict: if search results don't clearly confirm a claim, mark it UNCERTAIN.
@@ -253,7 +246,7 @@ Return JSON: { "results": [{ "claim": "...", "verdict": "correct|incorrect|uncer
 
       // ── STEP 4: If issues found, regenerate with corrections ──
       if (factCheck.issues.length > 0) {
-        const fixResult = callOpenAI(apiKey, {
+        const fixResult = await callOpenAI(apiKey, {
           model: "gpt-4o-mini",
           messages: [
             { role: "system", content: "You fix factual errors in video scripts. Return the SAME JSON structure with corrected facts. Keep the style, voice, and structure identical — only fix the wrong facts." },
