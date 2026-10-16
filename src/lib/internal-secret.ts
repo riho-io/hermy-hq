@@ -11,12 +11,37 @@ export function secretMatches(given: string | null, expected: string | undefined
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+// Values that were public at some point (the old .env.example placeholder ran in prod 26.07–16.10).
+const KNOWN_PLACEHOLDERS = new Set(["your-internal-api-secret"]);
+const MIN_SECRET_LENGTH = 32;
+let warnedWeakSecret = false;
+
 /**
- * Server-to-server auth for the data-push routes under /api (VPS scripts call them).
- * Fail-closed: no INTERNAL_API_SECRET configured => nothing is accepted.
+ * The configured INTERNAL_API_SECRET, or undefined when it is missing, too short or a known placeholder.
+ * Fail-closed: a weak secret disables the header entirely instead of accepting a guessable value.
+ */
+export function internalSecret(): string | undefined {
+  const value = process.env.INTERNAL_API_SECRET;
+  if (!value) return undefined;
+  if (value.length < MIN_SECRET_LENGTH || KNOWN_PLACEHOLDERS.has(value)) {
+    if (!warnedWeakSecret) {
+      warnedWeakSecret = true;
+      // Never log the value itself, only why it was rejected.
+      console.warn(
+        `INTERNAL_API_SECRET rejected (${value.length < MIN_SECRET_LENGTH ? "shorter than 32 characters" : "known placeholder"}); x-internal-secret is disabled`,
+      );
+    }
+    return undefined;
+  }
+  return value;
+}
+
+/**
+ * Server-to-server auth with x-internal-secret (VPS scripts call it).
+ * Fail-closed: no usable INTERNAL_API_SECRET configured => nothing is accepted.
  */
 export function hasInternalSecret(req: Request): boolean {
-  return secretMatches(req.headers.get("x-internal-secret"), process.env.INTERNAL_API_SECRET);
+  return secretMatches(req.headers.get("x-internal-secret"), internalSecret());
 }
 
 /**

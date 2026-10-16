@@ -116,22 +116,24 @@ Remember: connect it to the user's world (their AI agents, their trading bots, t
       return NextResponse.json({ error: "Empty response from model" }, { status: 500 });
     }
 
-    // Save to drafts via Hermy HQ API
+    // Save to drafts directly. This used to POST to a placeholder host (your-app.vercel.app) with the
+    // real x-internal-secret header, which handed the secret to whoever owns that domain.
     let saved = false;
     try {
-      const saveRes = await fetch("https://your-app.vercel.app/api/x-content", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-internal-secret": process.env.INTERNAL_API_SECRET || "",
-        },
-        body: JSON.stringify({
+      await prisma.draft.create({
+        data: {
+          id: crypto.randomUUID(),
           text: draft,
-          category: "trend-snipe",
           title: `Trend Snipe: ${topic}`,
-        }),
+          model: "manual",
+          status: "pending",
+          type: "tweet",
+          category: "trend-snipe",
+          feedbackRating: null,
+          feedbackReason: "",
+        },
       });
-      saved = saveRes.ok;
+      saved = true;
     } catch { /* save failed, draft still returned */ }
 
     return NextResponse.json({ draft, trendId, saved });
