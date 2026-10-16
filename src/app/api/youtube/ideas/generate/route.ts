@@ -1,32 +1,27 @@
 import { NextResponse } from "next/server";
 import fs from "fs";
-import { execSync } from "child_process";
-import path from "path";
 import { prisma } from "@/lib/prisma";
 
 const SCRIPTS_FILE = "./data/scripts-full.md";
 
-function callOpenAI(apiKey: string, payload: object, timeout = 45000): string {
-  const tmpFile = path.join("/tmp", `yt-ideas-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
-  fs.writeFileSync(tmpFile, JSON.stringify(payload));
-  try {
-    return execSync(
-      `curl -s -X POST "https://api.openai.com/v1/chat/completions" -H "Authorization: Bearer ${apiKey}" -H "Content-Type: application/json" -d @${tmpFile}`,
-      { timeout, encoding: "utf-8" }
-    );
-  } finally {
-    try { fs.unlinkSync(tmpFile); } catch { /* ok */ }
-  }
+async function callOpenAI(apiKey: string, payload: object, timeout = 45000): Promise<string> {
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(timeout),
+  });
+  return res.text();
 }
 
-function braveSearch(query: string, braveKey: string, count = 5): { title: string; url: string; description: string }[] {
+async function braveSearch(query: string, braveKey: string, count = 5): Promise<{ title: string; url: string; description: string }[]> {
   try {
     const searchUrl = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}`;
-    const res = execSync(
-      `curl -s "${searchUrl}" -H "Accept: application/json" -H "X-Subscription-Token: ${braveKey}"`,
-      { timeout: 10000, encoding: "utf-8" }
-    );
-    const data = JSON.parse(res);
+    const res = await fetch(searchUrl, {
+      headers: { Accept: "application/json", "X-Subscription-Token": braveKey },
+      signal: AbortSignal.timeout(10000),
+    });
+    const data = JSON.parse(await res.text());
     return (data.web?.results || []).map((r: any) => ({ title: r.title, url: r.url, description: r.description }));
   } catch {
     return [];
@@ -65,7 +60,7 @@ export async function POST() {
   try { coveredTopics = fs.readFileSync(SCRIPTS_FILE, "utf-8").match(/### .+/g)?.join(", ") || ""; } catch { /* ok - file may not exist on Vercel */ }
 
   // -- STEP 1: Ask GPT to generate search queries --
-  const queryGenResult = callOpenAI(apiKey, {
+  const queryGenResult = await callOpenAI(apiKey, {
     model: "gpt-4o-mini",
     messages: [
       { role: "system", content: `You generate search queries to find fascinating REAL stories about brands, businesses, and cultural moments for a viral short-form video creator.
@@ -94,7 +89,7 @@ Output JSON: {"queries":["search query 1","search query 2",...]}` },
   // -- STEP 2: Run each query through Brave Search --
   const allSearchResults: { query: string; results: { title: string; url: string; description: string }[] }[] = [];
   for (const query of queries.slice(0, 10)) {
-    const results = braveSearch(query, braveKey, 5);
+    const results = await braveSearch(query, braveKey, 5);
     allSearchResults.push({ query, results });
   }
 
@@ -104,7 +99,7 @@ Output JSON: {"queries":["search query 1","search query 2",...]}` },
   ).join("\n\n");
 
   // -- STEP 3: Feed real articles to GPT to create ideas --
-  const ideaGenResult = callOpenAI(apiKey, {
+  const ideaGenResult = await callOpenAI(apiKey, {
     model: "gpt-4o-mini",
     messages: [
       { role: "system", content: `You create viral short-form video ideas for the user based on REAL articles and stories found via web search.

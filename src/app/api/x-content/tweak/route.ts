@@ -2,8 +2,8 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
-import { execSync } from "child_process";
 import { prisma } from "@/lib/prisma";
+import { POST as generateVisual } from "../generate-visual/route";
 
 // TODO: This path won't exist on Vercel — consider bundling voice-rules or storing in DB
 const VOICE_RULES = path.join("./data/tweet-library", "voice-rules.md");
@@ -21,11 +21,15 @@ export async function POST(req: NextRequest) {
   if (comment.startsWith("[VISUAL]")) {
     // Trigger visual regeneration
     try {
-      const baseUrl = req.nextUrl.origin;
-      execSync(
-        `curl -s -X POST "${baseUrl}/api/x-content/generate-visual" -H "Content-Type: application/json" -d '{"draftId":"${draftId}"}'`,
-        { timeout: 30000 }
+      // Call the generate-visual handler in-process instead of over HTTP.
+      const visualRes = await generateVisual(
+        new NextRequest(new URL("/api/x-content/generate-visual", req.nextUrl.origin), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ draftId }),
+        })
       );
+      if (!visualRes.ok) throw new Error("visual generation failed");
       // Re-read after visual gen
       const updatedDraft = await prisma.draft.findUnique({ where: { id: draftId } });
       if (updatedDraft) {

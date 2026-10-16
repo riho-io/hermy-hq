@@ -1,6 +1,5 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
-import { execSync } from "child_process";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(req: NextRequest) {
@@ -32,10 +31,13 @@ export async function POST(req: NextRequest) {
           ]
         });
 
-        const result = execSync(
-          `curl -s -X POST "https://api.x.ai/v1/responses" -H "Authorization: Bearer ${apiKey}" -H "Content-Type: application/json" -d '${payload.replace(/'/g, "'\\''")}'`,
-          { timeout: 30000, encoding: "utf-8" }
-        );
+        const res = await fetch("https://api.x.ai/v1/responses", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+          body: payload,
+          signal: AbortSignal.timeout(30000),
+        });
+        const result = await res.text();
 
         const data = JSON.parse(result);
         // Responses API returns output_text or output array
