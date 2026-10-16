@@ -37,8 +37,9 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Allow internal agent calls with shared secret
-  if (hasInternalSecret(request)) {
+  // x-internal-secret opens exactly one door: the Argo reminder script (hermy_reminders_tg.py) reads reminders.
+  // Checked 16.10: no other VPS caller sends this header. Pages and every other API need a session.
+  if (pathname === '/api/reminders' && request.method === 'GET' && hasInternalSecret(request)) {
     return NextResponse.next();
   }
 
