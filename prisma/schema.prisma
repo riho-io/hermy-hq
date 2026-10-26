@@ -619,6 +619,22 @@ model AgentJobRun {
   @@schema("hermyhq")
 }
 
+// Report text of selected cron runs (from ~/.hermes/cron/output/<job>/<run>.md). Which jobs is decided on Argo.
+model AgentReport {
+  id       String   @id // "<jobId>/<output file stem>", stable per run, so a re-push is an upsert
+  jobId    String   @map("job_id")
+  source   String   @default("argo")
+  jobName  String   @map("job_name")
+  runAt    DateTime @map("run_at")
+  body     String // the delivered text only (agent prompt stripped on Argo)
+  syncedAt DateTime @default(now()) @map("synced_at")
+
+  @@index([jobId, runAt])
+  @@index([runAt])
+  @@map("agent_report")
+  @@schema("hermyhq")
+}
+
 // "Connected apps": last attempt per data source and whether it succeeded inside its expected window.
 model SourceHeartbeat {
   source           String    @id // e.g. "hermes", "konto", "wiki-pc"
