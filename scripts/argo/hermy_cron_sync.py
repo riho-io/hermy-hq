@@ -6,6 +6,12 @@ Runs as a no-agent Hermes cron every 5 min. Reads, never writes, Hermes state:
   ~/.hermes/cron/executions.db   -> runs claimed in the last RUN_WINDOW_H hours
 POSTs to {HERMY_HQ_URL}/api/ingest/hermes-cron with header x-ingest-secret.
 
+Reports: for the jobs listed in ~/.config/hermy-hq/report_jobs (one job id per line, # comments),
+the delivered text of each run in ~/.hermes/cron/output/<job>/<run>.md is POSTed to
+/api/ingest/hermes-report. Agent runs are cut to their "## Response" part (the prompt is never sent),
+[SILENT] runs are skipped. Sent runs are remembered in hermy_report_state.json; a missing
+allowlist file means no reports are sent.
+
 Secret: INGEST_SECRET from Doppler hermes/prd, else ~/.config/hermy-hq/ingest_secret (chmod 600).
 Env: HERMY_HQ_URL (optional).
 
@@ -14,7 +20,9 @@ Stdout is delivered to Telegram by Hermes, so it prints ONLY when sync state fli
 """
 import json
 import os
+import re
 import sqlite3
+import time
 import sys
 import urllib.error
 import urllib.request
@@ -24,10 +32,21 @@ from pathlib import Path
 HERMES = Path.home() / ".hermes" / "cron"
 STATE_FILE = HERMES / "hermy_sync_state.json"
 SECRET_FILE = Path.home() / ".config" / "hermy-hq" / "ingest_secret"
-URL = os.environ.get("HERMY_HQ_URL", "https://hermy-hq-tau.vercel.app").rstrip("/") + "/api/ingest/hermes-cron"
+BASE_URL = os.environ.get("HERMY_HQ_URL", "https://hermy-hq-tau.vercel.app").rstrip("/")
+URL = BASE_URL + "/api/ingest/hermes-cron"
+REPORT_URL = BASE_URL + "/api/ingest/hermes-report"
+REPORT_JOBS_FILE = Path.home() / ".config" / "hermy-hq" / "report_jobs"
+REPORT_STATE_FILE = HERMES / "hermy_report_state.json"
 RUN_WINDOW_H = 2       # re-send recent runs so running -> completed transitions are picked up
 MAX_RUNS = 500         # must match the route's limit
+REPORTS_PER_POST = 20  # route accepts 50; small batches keep each POST well under its 2 MB cap
+REPORTS_PER_RUN = 40   # a backlog drains over a few runs instead of one long one
+MAX_REPORT_CHARS = 100_000  # route clips at the same length
+MIN_AGE_S = 60         # skip output files Hermes may still be writing
 TIMEOUT_S = 20
+
+RUN_STEM = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")
+JOB_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
 def load_jobs():
@@ -81,9 +100,102 @@ def load_runs():
     return out
 
 
-def push(payload, secret):
+def extract_body(text):
+    """The delivered part of an output file, or None when there is nothing to show.
+
+    Agent run: header, "## Prompt" (which embeds the previous run's output), "## Response", reply.
+    Script run: header with "**Mode:** no_agent", a "---" line, then stdout.
+    """
+    lines = text.splitlines()
+    if any(l.startswith("**Mode:** no_agent") for l in lines[:10]):
+        try:
+            start = lines.index("---") + 1
+        except ValueError:
+            return None
+    else:
+        # The reply starts at the first "## Response" after "**Response Characters:**"; the prompt above
+        # may quote older reports, so a heading search from the top could land inside it.
+        marker = next((i for i, l in enumerate(lines) if l.startswith("**Response Characters:**")), -1)
+        start = next((i + 1 for i in range(marker + 1, len(lines)) if lines[i].strip() == "## Response"), None)
+        if start is None:
+            return None
+    body = "\n".join(lines[start:]).strip()
+    if not body or body == "[SILENT]":
+        return None
+    return body[:MAX_REPORT_CHARS]
+
+
+def load_report_jobs():
+    try:
+        raw = REPORT_JOBS_FILE.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    ids = [l.split("#", 1)[0].strip() for l in raw.splitlines()]
+    return [i for i in ids if JOB_ID.match(i)]
+
+
+def collect_reports(job_ids, job_names, sent, now=None):
+    """(reports to send, run keys to mark as handled without sending), oldest first, capped per run."""
+    now = now or time.time()
+    reports, skipped = [], []
+    for job_id in job_ids:
+        folder = HERMES / "output" / job_id
+        if not folder.is_dir():
+            continue
+        for path in sorted(folder.glob("*.md")):
+            key = f"{job_id}/{path.stem}"
+            if key in sent or not RUN_STEM.match(path.stem) or now - path.stat().st_mtime < MIN_AGE_S:
+                continue
+            body = extract_body(path.read_text(encoding="utf-8", errors="replace"))
+            if body is None:
+                skipped.append(key)
+                continue
+            # The stem is Argo's local time; astimezone() attaches the server's offset (Europe/Tallinn).
+            run_at = datetime.strptime(path.stem, "%Y-%m-%d_%H-%M-%S").astimezone()
+            reports.append({
+                "key": key,
+                "jobId": job_id,
+                "run": path.stem,
+                "jobName": job_names.get(job_id, job_id),
+                "runAt": run_at.isoformat(),
+                "body": body,
+            })
+    reports.sort(key=lambda r: r["runAt"])
+    return reports[:REPORTS_PER_RUN], skipped
+
+
+def read_report_state():
+    try:
+        return set(json.loads(REPORT_STATE_FILE.read_text(encoding="utf-8")).get("sent", []))
+    except (OSError, ValueError):
+        return set()
+
+
+def write_report_state(sent):
+    REPORT_STATE_FILE.write_text(json.dumps({"sent": sorted(sent)}), encoding="utf-8")
+
+
+def sync_reports(jobs, secret):
+    job_ids = load_report_jobs()
+    if not job_ids:
+        return 0
+    sent = read_report_state()
+    reports, skipped = collect_reports(job_ids, {j["id"]: j["name"] for j in jobs}, sent)
+    sent.update(skipped)
+    try:
+        for i in range(0, len(reports), REPORTS_PER_POST):
+            batch = reports[i:i + REPORTS_PER_POST]
+            push(REPORT_URL, {"source": "argo", "reports": [{k: v for k, v in r.items() if k != "key"} for r in batch]}, secret)
+            sent.update(r["key"] for r in batch)
+    finally:
+        # Save progress even when a later batch fails, so the next run resumes instead of re-sending.
+        write_report_state(sent)
+    return len(reports)
+
+
+def push(url, payload, secret):
     req = urllib.request.Request(
-        URL,
+        url,
         data=json.dumps(payload).encode("utf-8"),
         headers={"content-type": "application/json", "x-ingest-secret": secret},
         method="POST",
@@ -120,8 +232,9 @@ def main():
     try:
         if not secret:
             raise RuntimeError("INGEST_SECRET puudub")
-        payload = {"source": "argo", "jobs": load_jobs(), "runs": load_runs()}
-        push(payload, secret)
+        jobs = load_jobs()
+        push(URL, {"source": "argo", "jobs": jobs, "runs": load_runs()}, secret)
+        sync_reports(jobs, secret)
         ok, detail = True, None
     except urllib.error.HTTPError as e:
         ok, detail = False, f"HTTP {e.code}"
