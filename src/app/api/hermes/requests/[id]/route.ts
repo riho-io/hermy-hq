@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/require-session";
+import { decisionAllowed } from "@/lib/hermes-actions";
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const denied = await requireSession();
@@ -12,6 +13,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!existing) return NextResponse.json({ error: "not found" }, { status: 404 });
   if (!["awaiting_approval", "queued"].includes(existing.status))
     return NextResponse.json({ error: `cannot decide a ${existing.status} request` }, { status: 409 });
+
+  if (action === "approve" && !decisionAllowed(existing.kind, "approve"))
+    return NextResponse.json({ error: "kind not supported" }, { status: 409 });
+  if (action === "edit" && !decisionAllowed(existing.kind, "edit"))
+    return NextResponse.json({ error: "cron rows cannot be edited" }, { status: 400 });
 
   const data: Record<string, unknown> = { decidedAt: new Date() };
   if (action === "approve") data.status = "approved";

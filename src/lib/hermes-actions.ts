@@ -23,6 +23,16 @@ export function requiresApproval(kind: string): boolean {
   return isAllowed(kind) ? ALLOWED_KINDS[kind].approval : true;
 }
 
+// Which decisions the requests PATCH route may apply to a row of this kind.
+// approve: only kinds the executor knows. edit: never for cron.* rows (their
+// prompt is Zod-validated JSON; an edit would bypass validation).
+// reject: always, so old rows can be cleared.
+export function decisionAllowed(kind: string, action: 'approve' | 'reject' | 'edit'): boolean {
+  if (action === 'reject') return true;
+  if (action === 'approve') return isAllowed(kind);
+  return !kind.startsWith('cron.');
+}
+
 export const jobIdSchema = z.string().regex(/^[0-9a-f]{12}$/);
 // Must start alphanumeric so the value can never be read as a CLI flag.
 export const profileSchema = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,31}$/);

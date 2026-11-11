@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DELIVER_PRESETS, isAllowed, requiresApproval, jobIdSchema, profileSchema, presetSchema, scheduleSchema } from './hermes-actions';
+import { DELIVER_PRESETS, decisionAllowed, isAllowed, requiresApproval, jobIdSchema, profileSchema, presetSchema, scheduleSchema } from './hermes-actions';
 
 test('approval rules', () => {
   for (const k of ['cron.pause', 'cron.resume', 'cron.run', 'cron.deliver']) assert.equal(requiresApproval(k), false, k);
@@ -29,4 +29,12 @@ test('jobId, profile, schedule validation', () => {
   assert.equal(scheduleSchema.safeParse('*/5 * * * *').success, true);
   assert.equal(scheduleSchema.safeParse('every 2h').success, true);
   for (const bad of ['0 9 * * *; rm', '$(id)', 'a'.repeat(65), '', '`x`']) assert.equal(scheduleSchema.safeParse(bad).success, false, bad);
+});
+
+test('decisionAllowed', () => {
+  assert.equal(decisionAllowed('oneshot', 'approve'), false);
+  assert.equal(decisionAllowed('cron.schedule', 'approve'), true);
+  assert.equal(decisionAllowed('cron.schedule', 'edit'), false);
+  assert.equal(decisionAllowed('oneshot', 'reject'), true);
+  assert.equal(decisionAllowed('cron.schedule', 'reject'), true);
 });

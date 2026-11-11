@@ -9,12 +9,13 @@ test('dispatch rejects every cron kind', () => {
   }
 });
 
-test('dispatch rejects blocked kinds, accepts non-cron ones', () => {
+test('dispatch rejects blocked and non-cron kinds', () => {
   for (const k of ['oneshot', 'chat', 'memory.write', 'onboarding.write', '', 'constructor']) {
     assert.equal(dispatchAccepts(k), false, k);
   }
+  // The executor supports none of these, so dispatch is closed for every kind.
   for (const k of ['kanban', 'goal', 'briefing.generate', 'model.set', 'journey.fetch']) {
-    assert.equal(dispatchAccepts(k), true, k);
+    assert.equal(dispatchAccepts(k), false, k);
   }
 });
 
