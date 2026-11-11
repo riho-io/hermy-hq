@@ -37,6 +37,11 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // The executor also pulls its queue with GET; exactly this one path, secret checked in the route
+  if (pathname === '/api/ingest/hermes-requests' && request.method === 'GET') {
+    return NextResponse.next();
+  }
+
   // x-internal-secret opens exactly one door: the Argo reminder script (hermy_reminders_tg.py) reads reminders.
   // Checked 16.10: no other VPS caller sends this header. Pages and every other API need a session.
   if (pathname === '/api/reminders' && request.method === 'GET' && hasInternalSecret(request)) {

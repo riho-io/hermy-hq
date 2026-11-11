@@ -1,54 +1,26 @@
 import { NextResponse } from "next/server";
+import { requireSession } from "@/lib/require-session";
+import { requiresApproval } from "@/lib/hermes-actions";
+import { dispatchAccepts } from "@/lib/dispatch-kinds";
 import { prisma } from "@/lib/prisma";
-
-// Kinds the website may queue. Anything else is rejected — the caller must
-// not be able to smuggle arbitrary kind strings into the bridge.
-const ALLOWED_KINDS = new Set([
-  "oneshot",
-  "chat",
-  "kanban",
-  "goal",
-  "memory.write",
-  "briefing.generate",
-  "model.set",
-  "journey.fetch",
-  "onboarding.write",
-  "cron.create",
-  "cron.run",
-  "cron.pause",
-  "cron.resume",
-  "cron.remove",
-  "cron.edit",
-]);
-
-// Kinds that are ALWAYS side-effecting — the client may not downgrade them to
-// immediate execution. Goal mode is the most autonomous action, so it must
-// always wait for explicit approval. Mutating cron ops also change external
-// state (the cron store) — they must go through approval too.
-const ALWAYS_SIDE_EFFECTING = new Set([
-  "goal",
-  "cron.create",
-  "cron.edit",
-  "cron.remove",
-  "cron.pause",
-  "cron.resume",
-]);
 
 // POST { kind?, title, prompt?, sideEffecting? } → queue work for Hermes.
 // Side-effecting work waits for approval; safe work is queued immediately.
 export async function POST(req: Request) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const b = await req.json().catch(() => ({}));
   const title = (b.title || b.prompt || "").toString().trim();
   if (!title) return NextResponse.json({ error: "title or prompt required" }, { status: 400 });
 
-  const kind = (b.kind || "oneshot").toString();
-  if (!ALLOWED_KINDS.has(kind)) {
+  const kind = (b.kind || "").toString();
+  if (!dispatchAccepts(kind)) {
     return NextResponse.json({ error: "kind not allowed" }, { status: 400 });
   }
 
-  // Enforce the approval gate for high-risk kinds regardless of what the
-  // client sent — never let an authenticated caller bypass it.
-  const sideEffecting = ALWAYS_SIDE_EFFECTING.has(kind) || Boolean(b.sideEffecting);
+  // Approval comes only from requiresApproval() (fails closed for kinds not in
+  // the hermes-actions table); the client cannot downgrade it.
+  const sideEffecting = requiresApproval(kind);
 
   const row = await prisma.agentRequest.create({
     data: {

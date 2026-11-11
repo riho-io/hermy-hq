@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
+import { requireSession } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
 
 // GET /api/hermes/journey → session list (mirrored by the bridge) or, when
 // ?sessionId= is given, the cached trace for that session.
 export async function GET(req: Request) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const url = new URL(req.url);
   const sessionId = url.searchParams.get("sessionId")?.trim();
 
@@ -19,6 +22,8 @@ export async function GET(req: Request) {
 // POST /api/hermes/journey { sessionId } → queue a journey.fetch request so
 // the bridge exports the full trace and caches it in DataStore.
 export async function POST(req: Request) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const b = await req.json().catch(() => ({}));
   const sessionId = (b.sessionId || "").toString().trim();
   if (!/^\d{8}_\d{6}_[A-Za-z0-9_]+$/.test(sessionId)) {

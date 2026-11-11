@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 import unittest
@@ -60,9 +61,7 @@ class ExtractBody(unittest.TestCase):
 class CollectReports(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.old = s.HERMES
-        s.HERMES = Path(self.tmp.name)
-        out = s.HERMES / "output" / "abc"
+        out = Path(self.tmp.name) / "output" / "abc"
         out.mkdir(parents=True)
         (out / "2026-10-26_10-05-38.md").write_text(AGENT, encoding="utf-8")
         (out / "2026-10-19_10-02-14.md").write_text(AGENT, encoding="utf-8")
@@ -76,13 +75,13 @@ class CollectReports(unittest.TestCase):
                 os.utime(p, (old, old))
         self.now = old + 3600
         os.utime(self.fresh, (self.now - 5, self.now - 5))
+        self.sources = {"abc": (out, "Radar"), "missing": (Path(self.tmp.name) / "output" / "missing", "Gone")}
 
     def tearDown(self):
-        s.HERMES = self.old
         self.tmp.cleanup()
 
     def test_oldest_first_skips_silent_unknown_and_fresh(self):
-        reports, skipped = s.collect_reports(["abc", "missing"], {"abc": "Radar"}, set(), now=self.now)
+        reports, skipped = s.collect_reports(self.sources, set(), now=self.now)
         self.assertEqual([r["run"] for r in reports], ["2026-10-19_10-02-14", "2026-10-26_10-05-38"])
         self.assertEqual(skipped, ["abc/2026-10-12_10-04-19"])
         self.assertEqual(reports[0]["jobName"], "Radar")
@@ -90,21 +89,177 @@ class CollectReports(unittest.TestCase):
         self.assertRegex(reports[0]["runAt"], r"^2026-10-19T10:02:14[+-]\d\d:\d\d$")
 
     def test_already_sent_is_not_resent(self):
-        reports, _ = s.collect_reports(["abc"], {}, {"abc/2026-10-19_10-02-14"}, now=self.now)
+        reports, _ = s.collect_reports(self.sources, {"abc/2026-10-19_10-02-14"}, now=self.now)
         self.assertEqual([r["run"] for r in reports], ["2026-10-26_10-05-38"])
 
 
-class ReportJobs(unittest.TestCase):
+def _jobs_json(path, jobs):
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "jobs.json").write_text(json.dumps({"jobs": jobs}), encoding="utf-8")
+
+
+class ReportSources(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.old = (s.HERMES_HOME, s.HERMES)
+        s.HERMES_HOME = Path(self.tmp.name)
+        s.HERMES = s.HERMES_HOME / "cron"
+        _jobs_json(s.HERMES, [{"id": "aaa", "name": "Uudised"}, {"id": "bad id", "name": "x"}])
+        _jobs_json(s.HERMES_HOME / "profiles" / "dubi" / "cron", [{"id": "bbb", "name": "Radar"}, {"id": "aaa", "name": "Dup"}])
+        _jobs_json(s.HERMES_HOME / "profiles" / "tark" / "cron", [{"id": "ccc"}])
+        (s.HERMES_HOME / "profiles" / "empty").mkdir(parents=True)  # profile without cron folder
+        bad = s.HERMES_HOME / "profiles" / "broken" / "cron"
+        bad.mkdir(parents=True)
+        (bad / "jobs.json").write_text("{not json", encoding="utf-8")
+        for name, raw in [("jnull", "null"), ("jnum", "42"), ("jjobsnull", '{"jobs": null}'),
+                          ("jmixed", '{"jobs": ["str", {"id": "ddd", "name": "D"}]}')]:
+            wrong = s.HERMES_HOME / "profiles" / name / "cron"
+            wrong.mkdir(parents=True)
+            (wrong / "jobs.json").write_text(raw, encoding="utf-8")
+
+    def tearDown(self):
+        s.HERMES_HOME, s.HERMES = self.old
+        self.tmp.cleanup()
+
+    def test_all_profiles_first_wins_invalid_dropped(self):
+        src = s.load_report_sources()
+        self.assertEqual(sorted(src), ["aaa", "bbb", "ccc", "ddd"])
+        self.assertEqual(src["aaa"], (s.HERMES / "output" / "aaa", "Uudised"))
+        self.assertEqual(src["bbb"], (s.HERMES_HOME / "profiles" / "dubi" / "cron" / "output" / "bbb", "Radar"))
+        self.assertEqual(src["ccc"][1], "ccc")  # name falls back to id
+
+    def test_cron_dirs_default_first(self):
+        self.assertEqual(s.cron_dirs()[0], s.HERMES)
+        self.assertNotIn(s.HERMES_HOME / "profiles" / "empty" / "cron", s.cron_dirs())
+
+
+class LoadJobs(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.old = (s.HERMES_HOME, s.HERMES)
+        s.HERMES_HOME = Path(self.tmp.name)
+        s.HERMES = s.HERMES_HOME / "cron"
+        _jobs_json(s.HERMES, [{"id": "aaa", "name": "Uudised", "deliver": "local", "failure_deliver": "telegram:123", "state": "paused"},
+                              {"id": "bad id"}, {"name": "no id"}, "str"])
+        _jobs_json(s.HERMES_HOME / "profiles" / "dubi" / "cron", [{"id": "bbb", "name": "Radar"}, {"id": "aaa", "name": "Dup"}])
+        (s.HERMES_HOME / "profiles" / "empty").mkdir(parents=True)  # profile without cron folder
+        (s.HERMES_HOME / "profiles" / "nofile" / "cron").mkdir(parents=True)  # cron folder, no jobs.json
+
+    def tearDown(self):
+        s.HERMES_HOME, s.HERMES = self.old
+        self.tmp.cleanup()
+
+    def test_all_profiles_with_profile_and_deliver(self):
+        jobs = {j["id"]: j for j in s.load_jobs()}
+        self.assertEqual(sorted(jobs), ["aaa", "bbb"])
+        self.assertEqual(jobs["aaa"]["profile"], "default")  # first wins over dubi's duplicate
+        self.assertEqual(jobs["aaa"]["deliver"], "local")
+        self.assertEqual(jobs["aaa"]["failureDeliver"], "telegram:123")
+        self.assertEqual(jobs["aaa"]["state"], "paused")
+        self.assertEqual(jobs["bbb"]["profile"], "dubi")
+        self.assertIsNone(jobs["bbb"]["deliver"])
+        self.assertIsNone(jobs["bbb"]["failureDeliver"])
+
+    def test_missing_file_is_a_profile_without_crons(self):
+        (s.HERMES_HOME / "profiles" / "dubi" / "cron" / "jobs.json").unlink()
+        self.assertEqual([j["id"] for j in s.load_jobs()], ["aaa"])
+
+    def test_broken_existing_file_raises(self):
+        # Skipping it would drop that profile's jobs from the snapshot, and the route deletes them.
+        bad = s.HERMES_HOME / "profiles" / "broken" / "cron"
+        bad.mkdir(parents=True)
+        (bad / "jobs.json").write_text("{not json", encoding="utf-8")
+        with self.assertRaises(ValueError):
+            s.load_jobs()
+
+    def test_read_error_is_retried_once(self):
+        from unittest import mock
+        real = Path.read_text
+        calls = []
+        def flaky(self_, *a, **k):
+            if self_.name == "jobs.json":
+                calls.append(str(self_))
+                if len(calls) == 1:
+                    return "{half"
+            return real(self_, *a, **k)
+        with mock.patch.object(Path, "read_text", flaky), mock.patch.object(s.time, "sleep") as sl:
+            jobs = s.load_jobs()
+        self.assertEqual(sorted(j["id"] for j in jobs), ["aaa", "bbb"])
+        sl.assert_called_once_with(0.5)
+
+    def test_wrong_shape_existing_file_raises(self):
+        for raw in ("null", "42", '{"jobs": null}', '"x"'):
+            with self.subTest(raw=raw):
+                (s.HERMES_HOME / "profiles" / "dubi" / "cron" / "jobs.json").write_text(raw, encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    s.load_jobs()
+
+    def test_no_jobs_file_anywhere_raises(self):
+        for f in list(s.HERMES_HOME.rglob("jobs.json")):
+            f.unlink()
+        with self.assertRaises(FileNotFoundError):
+            s.load_jobs()
+
+
+class SyncReportsExclude(unittest.TestCase):
+    PATCHED = ("load_report_sources", "load_report_exclude", "read_report_state", "write_report_state", "push")
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.saved = {n: getattr(s, n) for n in self.PATCHED}
+        root = Path(self.tmp.name)
+        sources = {}
+        for jid in ("keep", "drop"):
+            folder = root / jid
+            folder.mkdir()
+            f = folder / "2026-10-19_10-02-14.md"
+            f.write_text("# Cron Job\n\n**Mode:** no_agent (script)\n\n---\n\nhello\n", encoding="utf-8")
+            old = f.stat().st_mtime - 10 * s.MIN_AGE_S
+            os.utime(f, (old, old))
+            sources[jid] = (folder, jid.upper()[0])
+        self.pushed = []
+        s.load_report_sources = lambda: sources
+        s.load_report_exclude = lambda: {"drop"}
+        s.read_report_state = lambda: set()
+        s.write_report_state = lambda sent: None
+        s.push = lambda url, payload, secret: self.pushed.append(payload)
+
+    def tearDown(self):
+        for n, v in self.saved.items():
+            setattr(s, n, v)
+        self.tmp.cleanup()
+
+    def test_excluded_job_not_pushed(self):
+        self.assertEqual(s.sync_reports("x"), 1)
+        reports = [r for p in self.pushed for r in p["reports"]]
+        self.assertEqual([r["jobId"] for r in reports], ["keep"])
+
+
+class ReportExclude(unittest.TestCase):
     def test_comments_and_invalid_ids_dropped(self):
         with tempfile.TemporaryDirectory() as d:
-            old = s.REPORT_JOBS_FILE
-            s.REPORT_JOBS_FILE = Path(d) / "report_jobs"
+            old = s.REPORT_EXCLUDE_FILE
+            s.REPORT_EXCLUDE_FILE = Path(d) / "report_exclude"
             try:
-                self.assertEqual(s.load_report_jobs(), [])
-                s.REPORT_JOBS_FILE.write_text("abc  # radar\n\n# off\nbad id\ndef\n", encoding="utf-8")
-                self.assertEqual(s.load_report_jobs(), ["abc", "def"])
+                self.assertEqual(s.load_report_exclude(), set())  # missing file = exclude nothing
+                s.REPORT_EXCLUDE_FILE.write_text("abc  # mustandid\n\n# off\nbad id\ndef\n", encoding="utf-8")
+                self.assertEqual(s.load_report_exclude(), {"abc", "def"})
             finally:
-                s.REPORT_JOBS_FILE = old
+                s.REPORT_EXCLUDE_FILE = old
+
+
+class ReadSecret(unittest.TestCase):
+    def test_non_utf8_secret_file_returns_none(self):
+        with tempfile.TemporaryDirectory() as d:
+            old = (s.SECRET_FILE, os.environ.pop("INGEST_SECRET", None))
+            s.SECRET_FILE = Path(d) / "secret"
+            s.SECRET_FILE.write_bytes(b"\xff\xfe\x00bad")
+            try:
+                self.assertIsNone(s.read_secret())
+            finally:
+                s.SECRET_FILE = old[0]
+                if old[1] is not None:
+                    os.environ["INGEST_SECRET"] = old[1]
 
 
 if __name__ == "__main__":

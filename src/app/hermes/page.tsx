@@ -2,26 +2,18 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Send,
   RefreshCw,
   Check,
   X,
   Pencil,
   Inbox,
-  Clock,
-  Zap,
   Activity as ActivityIcon,
   LayoutGrid,
-  Pause,
-  Play,
-  Target,
   Cpu,
-  Mic,
 } from "lucide-react";
 import {
   Panel,
   SectionHeader,
-  Button,
   Pill,
   EmptyState,
   Skeleton,
@@ -29,6 +21,8 @@ import {
 } from "@/components/ui/kit";
 import { HermesDispatches } from "@/components/hermes-dispatches";
 import { HermesRuns } from "@/components/hermes-runs";
+import { CronPanel } from "@/components/hermes-cron-panel";
+import type { CronJob } from "@/app/api/hermes/crons/route";
 
 // ── Types ─────────────────────────────────────────────────
 type ReqStatus =
@@ -192,229 +186,12 @@ function HealthChip({ health }: { health: Health | null }) {
 }
 
 // ── Dispatch bar ──────────────────────────────────────────
-// Minimal typing for the Web Speech API (not in TS lib by default).
-interface SpeechRecognitionLike {
-  lang: string;
-  interimResults: boolean;
-  start(): void;
-  stop(): void;
-  onresult: ((e: { results?: { [i: number]: { [j: number]: { transcript?: string } } } }) => void) | null;
-  onerror: (() => void) | null;
-  onend: (() => void) | null;
-}
-interface SpeechRecognitionCtor { new (): SpeechRecognitionLike }
-
-function DispatchBar({ onDone }: { onDone: () => void }) {
-  const [text, setText] = useState("");
-  const [side, setSide] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
-  const [listening, setListening] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const recogRef = useRef<SpeechRecognitionLike | null>(null);
-
-  const flash = (msg: string) => {
-    setToast(msg);
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setToast(null), 4000);
-  };
-  useEffect(() => () => {
-    if (timer.current) clearTimeout(timer.current);
-    recogRef.current?.stop?.();
-  }, []);
-
-  // Voice input via the browser Web Speech API — no server needed. Hermes
-  // (Keith AI's video) style: talk to the agent directly from the dashboard.
-  const toggleVoice = () => {
-    if (listening) {
-      recogRef.current?.stop?.();
-      setListening(false);
-      return;
-    }
-    const w = window as unknown as { SpeechRecognition?: SpeechRecognitionCtor; webkitSpeechRecognition?: SpeechRecognitionCtor };
-    const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
-    if (!SR) { flash("Hääl ei ole selle brauseri toetatud."); return; }
-    const recog = new SR();
-    recog.lang = "et-EE";
-    recog.interimResults = false;
-    recog.onresult = (e) => {
-      const transcript = e.results?.[0]?.[0]?.transcript ?? "";
-      setText((t) => (t ? t + " " : "") + transcript);
-      setListening(false);
-    };
-    recog.onerror = () => { setListening(false); flash("Hääl ei õnnestunud — proovi uuesti."); };
-    recog.onend = () => setListening(false);
-    recogRef.current = recog;
-    recog.start();
-    setListening(true);
-  };
-
-  const submit = async () => {
-    const title = text.trim();
-    if (!title || busy) return;
-    setBusy(true);
-    try {
-      const r = await fetch("/api/hermes/dispatch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: "oneshot", title, sideEffecting: side }),
-      });
-      if (r.ok) {
-        setText("");
-        flash(
-          side
-            ? "Saadetud kinnitussisendisse — ootan sinu otsust."
-            : "Järjekorda pandud Hermesele."
-        );
-        onDone();
-      } else {
-        flash("Saatmine ebaõnnestus. Proovi uuesti.");
-      }
-    } catch {
-      flash("Saatmine ebaõnnestus. Proovi uuesti.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
+function DispatchBar() {
+  // Free-text commands used to be queued here as "oneshot" jobs; the executor only
+  // runs the cron allowlist now, so the dispatch route rejects them.
   return (
     <Panel className="p-5">
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") { e.preventDefault(); submit(); }
-          }}
-          placeholder="Küsi või ütle Hermesele, mida teha…"
-          className="flex-1 min-w-0 bg-transparent text-[14px] text-[var(--text)] placeholder:text-[var(--text-3)] px-3.5 py-2.5 rounded-[10px] border border-[var(--line)] focus:border-[color-mix(in_srgb,var(--accent)_45%,transparent)] outline-none transition-colors"
-        />
-        <button
-          type="button"
-          onClick={toggleVoice}
-          title={listening ? "Peata kuulamine" : "Räägi (hääl)"}
-          aria-label="Hääl"
-          className={`inline-flex items-center justify-center w-9 h-9 rounded-[10px] border transition-colors shrink-0 ${
-            listening
-              ? "border-[color-mix(in_srgb,var(--accent)_60%,transparent)] bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] text-[var(--accent)] animate-pulse"
-              : "border-[var(--line)] text-[var(--text-3)] hover:text-[var(--text)]"
-          }`}
-        >
-          <Mic className="w-4 h-4" />
-        </button>
-        <div className="flex items-center gap-3 shrink-0">
-          <button
-            type="button"
-            onClick={() => setSide((s) => !s)}
-            aria-pressed={side}
-            className="flex items-center gap-2 select-none"
-          >
-            <span
-              className="relative inline-flex h-[18px] w-[32px] rounded-full transition-colors"
-              style={{
-                background: side
-                  ? "color-mix(in srgb, var(--warn) 55%, transparent)"
-                  : "var(--surface-2)",
-                border: "1px solid var(--line)",
-              }}
-            >
-              <span
-                className="absolute top-[1px] h-[14px] w-[14px] rounded-full bg-[var(--text)] transition-all"
-                style={{ left: side ? "15px" : "1px" }}
-              />
-            </span>
-            <span className="text-[12px] font-medium text-[var(--text-2)]">
-              külgmõjuga?
-            </span>
-          </button>
-          <Button variant="primary" onClick={submit} disabled={busy || !text.trim()}>
-            <Send className="w-3.5 h-3.5" />
-            Saada
-          </Button>
-        </div>
-      </div>
-      {toast && (
-        <p className="mt-3 text-[12.5px] text-[var(--text-2)] flex items-center gap-1.5">
-          <Check className="w-3.5 h-3.5" style={{ color: "var(--up)" }} />
-          {toast}
-        </p>
-      )}
-    </Panel>
-  );
-}
-
-// ── Goal Mode ─────────────────────────────────────────────
-// Send a long-running autonomous goal to Hermes (bridge runs it with a
-// longer timeout). Mirrors Julian's "goal mode": one prompt, hours of work.
-function GoalModeCard({ onDone }: { onDone: () => void }) {
-  const [goal, setGoal] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const flash = (msg: string) => {
-    setToast(msg);
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setToast(null), 6000);
-  };
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
-
-  const submit = async () => {
-    if (!goal.trim() || busy) return;
-    setBusy(true);
-    try {
-      const r = await fetch("/api/hermes/dispatch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // Goal mode is the most autonomous action — it MUST go through the
-        // approval gate before the bridge will run it.
-        body: JSON.stringify({ kind: "goal", sideEffecting: true, title: goal.trim().slice(0, 200), prompt: goal.trim() }),
-      });
-      const d = await r.json().catch(() => ({}));
-      if (r.ok) {
-        setGoal("");
-        flash("Eesmärk saadetud kinnitussisendisse — kinnita see, siis hakkab Hermes tööle!");
-      } else {
-        flash("Saatmine ebaõnnestus. Proovi uuesti.");
-      }
-      onDone();
-    } catch {
-      flash("Saatmine ebaõnnestus. Proovi uuesti.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Panel className="p-5">
-      <div className="flex items-center gap-2.5 mb-3">
-        <Target className="w-4 h-4" style={{ color: "var(--accent)" }} />
-        <Eyebrow>Eesmärgirežiim</Eyebrow>
-        <Pill tone="accent">goal mode</Pill>
-      </div>
-      <p className="text-[12.5px] text-[var(--text-3)] mb-3">
-        Anna üks suur eesmärk — Hermes töötab selle kallal tunde iseseisvalt. Eesmärk läheb esmalt kinnitussisendisse (turvalisus!).
-      </p>
-      <textarea
-        value={goal}
-        onChange={(e) => setGoal(e.target.value)}
-        rows={3}
-        placeholder="Nt: uuri ja koosta terve nädala sisu meie publikule…"
-        className="w-full bg-transparent text-[13.5px] text-[var(--text)] placeholder:text-[var(--text-3)] px-3.5 py-2.5 rounded-[10px] border border-[var(--line)] focus:border-[color-mix(in_srgb,var(--accent)_45%,transparent)] outline-none transition-colors resize-y"
-      />
-      <div className="flex items-center justify-between mt-3">
-        <span className="text-[11px] text-[var(--text-3)] num">kuni 30 min autonoomset tööd</span>
-        <Button variant="primary" onClick={submit} disabled={busy || !goal.trim()}>
-          <Zap className="w-3.5 h-3.5" />
-          {busy ? "Saadan…" : "Käivita eesmärk"}
-        </Button>
-      </div>
-      {toast && (
-        <p className="mt-3 text-[12.5px] text-[var(--text-2)] flex items-center gap-1.5">
-          <Check className="w-3.5 h-3.5" style={{ color: "var(--up)" }} />
-          {toast}
-        </p>
-      )}
+      <p className="text-[13px] text-[var(--text-2)]">Vaba tekstiga käsud käivad CC kaudu.</p>
     </Panel>
   );
 }
@@ -731,182 +508,6 @@ function TaskBoard({
   );
 }
 
-// ── Cron / schedules ──────────────────────────────────────
-type CronJob = {
-  id: string; status: string; name: string; schedule: string;
-  nextRun: string | null; lastRun: string | null; lastResult: string | null;
-  deliver: string | null; skills: string | null; script: string | null; mode: string | null;
-};
-function CronPanel({ jobs, syncedAt, onDone }: { jobs: CronJob[]; syncedAt: string | null; onDone: () => void }) {
-  const [schedule, setSchedule] = useState("");
-  const [prompt, setPrompt] = useState("");
-  const [runName, setRunName] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
-
-  const post = async (body: Record<string, unknown>, ok: string) => {
-    setBusy(true);
-    try {
-      const r = await fetch("/api/hermes/crons", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      setNote(r.ok ? ok : "Päring ebaõnnestus.");
-      if (r.ok) onDone();
-    } catch {
-      setNote("Päring ebaõnnestus.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const create = () => {
-    if (!schedule.trim() || !prompt.trim()) return;
-    post(
-      { op: "create", schedule: schedule.trim(), prompt: prompt.trim() },
-      "Graafik saadetud Hermesele."
-    ).then(() => {
-      setSchedule("");
-      setPrompt("");
-    });
-  };
-  const runNow = () => {
-    if (!runName.trim()) return;
-    post({ op: "run", name: runName.trim() }, "Kohene käivitus saadetud Hermesele.").then(() =>
-      setRunName("")
-    );
-  };
-
-  return (
-    <>
-      <SectionHeader
-        label="Cron · graafikud"
-        title="Korduvad tööd"
-        action={
-          <span className="num text-[11px] text-[var(--text-3)]">
-            sünkroonitud {timeAgo(syncedAt)}
-          </span>
-        }
-      />
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Schedules */}
-        <Panel className="p-5">
-          <div className="flex items-center justify-between mb-3">
-            <Eyebrow>graafikud</Eyebrow>
-            <span className="num text-[10.5px] text-[var(--text-3)]">
-              {jobs.length} töö{jobs.length === 1 ? "" : "d"}
-            </span>
-          </div>
-          {jobs.length === 0 ? (
-            <p className="text-[13px] text-[var(--text-3)] py-6 text-center">
-              Graafikuid pole veel.
-            </p>
-          ) : (
-            <div className="flex flex-col gap-2 max-h-[440px] overflow-auto -mx-1 px-1">
-              {jobs.map((j) => {
-                const active = j.status === "active";
-                return (
-                  <div key={j.id} className="rounded-[10px] border border-[var(--line)] bg-[var(--surface-2)] p-3">
-                    <div className="flex items-start gap-2.5">
-                      <span className="mt-1.5 w-1.5 h-1.5 rounded-full shrink-0" style={{ background: active ? "var(--up)" : "var(--text-3)" }} title={j.status} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[13px] font-medium text-[var(--text)] truncate">{j.name || j.id}</p>
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 num text-[11px] text-[var(--text-3)]">
-                          <span className="text-[var(--text-2)]">{j.schedule}</span>
-                          {j.nextRun && <span>järgmine {timeAgo(j.nextRun)}</span>}
-                          {j.deliver && <span>→ {j.deliver.split(":")[0]}</span>}
-                          {j.skills && <span>{j.skills}</span>}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button title="Käivita kohe" disabled={busy} onClick={() => post({ op: "run", id: j.id, name: j.name }, "Kohene käivitus saadetud.")} className="p-1.5 rounded-md text-[var(--text-3)] hover:text-[var(--accent)] hover:bg-[var(--surface-1)] transition-colors">
-                          <Zap className="w-3.5 h-3.5" />
-                        </button>
-                        {active ? (
-                          <button title="Peata" disabled={busy} onClick={() => post({ op: "pause", id: j.id, name: j.name }, "Peatamine saadetud.")} className="p-1.5 rounded-md text-[var(--text-3)] hover:text-[var(--warn)] hover:bg-[var(--surface-1)] transition-colors">
-                            <Pause className="w-3.5 h-3.5" />
-                          </button>
-                        ) : (
-                          <button title="Jätka" disabled={busy} onClick={() => post({ op: "resume", id: j.id, name: j.name }, "Jätkamine saadetud.")} className="p-1.5 rounded-md text-[var(--text-3)] hover:text-[var(--up)] hover:bg-[var(--surface-1)] transition-colors">
-                            <Play className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                        <button title="Kustuta" disabled={busy} onClick={() => { if (confirm(`Kustuta töö "${j.name || j.id}"?`)) post({ op: "remove", id: j.id, name: j.name }, "Kustutamine saadetud."); }} className="p-1.5 rounded-md text-[var(--text-3)] hover:text-[var(--down)] hover:bg-[var(--surface-1)] transition-colors">
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </Panel>
-
-        {/* Controls */}
-        <Panel className="p-5">
-          <div className="space-y-4">
-            <div>
-              <Eyebrow className="!mb-2 block">Uus graafik</Eyebrow>
-              <div className="space-y-2.5">
-                <input
-                  value={schedule}
-                  onChange={(e) => setSchedule(e.target.value)}
-                  placeholder="Graafik (nt 0 9 * * 1)"
-                  className="w-full bg-transparent num text-[13px] text-[var(--text)] placeholder:text-[var(--text-3)] px-3 py-2 rounded-[8px] border border-[var(--line)] outline-none focus:border-[color-mix(in_srgb,var(--accent)_45%,transparent)]"
-                />
-                <textarea
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  rows={2}
-                  placeholder="Käsk — mida peaks Hermes sellel intervallil tegema?"
-                  className="w-full bg-transparent text-[13px] text-[var(--text-2)] placeholder:text-[var(--text-3)] px-3 py-2 rounded-[8px] border border-[var(--line)] outline-none focus:border-[color-mix(in_srgb,var(--accent)_45%,transparent)] resize-y"
-                />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={create}
-                  disabled={busy || !schedule.trim() || !prompt.trim()}
-                >
-                  <Clock className="w-3.5 h-3.5" />
-                  Loo graafik
-                </Button>
-              </div>
-            </div>
-
-            <div className="rule" />
-
-            <div>
-              <Eyebrow className="!mb-2 block">Käivita kohe</Eyebrow>
-              <div className="flex items-center gap-2.5">
-                <input
-                  value={runName}
-                  onChange={(e) => setRunName(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); runNow(); } }}
-                  placeholder="Töö nimi"
-                  className="flex-1 min-w-0 bg-transparent text-[13px] text-[var(--text)] placeholder:text-[var(--text-3)] px-3 py-2 rounded-[8px] border border-[var(--line)] outline-none focus:border-[color-mix(in_srgb,var(--accent)_45%,transparent)]"
-                />
-                <Button variant="ghost" size="sm" onClick={runNow} disabled={busy || !runName.trim()}>
-                  <Zap className="w-3.5 h-3.5" />
-                  Käivita kohe
-                </Button>
-              </div>
-            </div>
-
-            {note && (
-              <p className="text-[12px] text-[var(--text-2)] flex items-center gap-1.5">
-                <Check className="w-3.5 h-3.5" style={{ color: "var(--up)" }} />
-                {note}
-              </p>
-            )}
-          </div>
-        </Panel>
-      </div>
-    </>
-  );
-}
-
 // ── Activity feed ─────────────────────────────────────────
 function ActivityFeed({ events }: { events: Ev[] }) {
   return (
@@ -1040,12 +641,11 @@ export default function HermesPage() {
 
         {/* Dispatch */}
         <div className="hq-rise">
-          <DispatchBar onDone={load} />
+          <DispatchBar />
         </div>
 
-        {/* Goal Mode + Model switching — Julian-style extras */}
+        {/* Model switching. Goal mode was removed: dispatch no longer accepts kind "goal". */}
         <div className="mt-5 grid grid-cols-1 xl:grid-cols-2 gap-5 items-start hq-rise">
-          <GoalModeCard onDone={load} />
           <ModelSwitcher />
         </div>
 

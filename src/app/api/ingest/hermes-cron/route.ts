@@ -33,6 +33,10 @@ const Job = z.object({
   lastError: clipped(2000).nullable(),
   failureStreak: z.number().int().min(0).max(100_000),
   nextRunAt: ts.nullable(),
+  // Optional: payloads from an older hermy_cron_sync.py omit them.
+  profile: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,31}$/).optional(),
+  deliver: z.string().max(200).nullable().optional(),
+  failureDeliver: z.string().max(200).nullable().optional(),
 });
 
 const Run = z.object({
@@ -74,6 +78,21 @@ export async function POST(req: NextRequest) {
   }
   const { source, jobs, runs } = parsed.data;
   const now = new Date();
+
+  // An empty snapshot would delete every job below; Argo always has at least the sync cron itself,
+  // so treat it as a read failure rather than "all crons removed".
+  if (jobs.length === 0) {
+    let existing: number;
+    try {
+      existing = await prisma.agentJob.count({ where: { source } });
+    } catch (err) {
+      console.error('ingest/hermes-cron count failed', err instanceof Error ? err.message : err);
+      return NextResponse.json({ error: 'Write failed' }, { status: 500 });
+    }
+    if (existing > 0) {
+      return NextResponse.json({ error: 'Empty jobs snapshot refused' }, { status: 400 });
+    }
+  }
 
   try {
     await prisma.$transaction([
