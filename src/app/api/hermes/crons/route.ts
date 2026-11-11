@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { requireSession } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
 import { isAllowed, requiresApproval, jobIdSchema, profileSchema, presetSchema, scheduleSchema } from "@/lib/hermes-actions";
 
@@ -54,6 +53,8 @@ function parseCrons(raw: string): CronJob[] {
 }
 
 export async function GET() {
+  const denied = await requireSession();
+  if (denied) return denied;
   const row = await prisma.dataStore.findUnique({ where: { key: "hermes-crons" } });
   const data = (row?.data as { raw?: string; syncedAt?: string } | null) ?? {};
   const jobs = data.raw ? parseCrons(data.raw) : [];
@@ -64,10 +65,8 @@ export async function GET() {
 // → queue a cron mutation for the narrow server-side executor. Allowlist lives in hermes-actions.ts.
 // AgentRequest has no metadata column, so {jobId, profile, preset|schedule} is stored as JSON in `prompt`.
 export async function POST(req: Request) {
-  if (process.env.NODE_ENV !== "development") {
-    const session = await getServerSession(authOptions);
-    if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const denied = await requireSession();
+  if (denied) return denied;
   const b = await req.json().catch(() => ({}));
   const op = (b.op || "").toString();
   if (["create", "edit", "remove"].includes(op))

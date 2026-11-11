@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireSession } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
 
 // Allowed models the operator can switch to (keep it a curated allowlist —
@@ -19,6 +20,8 @@ const ALLOWED_MODELS = [
 // The website never talks to the Hermes CLI directly (it lives on the bridge
 // machine); the bridge mirrors the current model here on its mirror tick.
 export async function GET() {
+  const denied = await requireSession();
+  if (denied) return denied;
   try {
     const row = await prisma.dataStore.findUnique({ where: { key: "hermes-model" } });
     const current = (row?.data as any)?.model || "";
@@ -35,6 +38,8 @@ export async function GET() {
 // bus; the bridge picks it up, runs `hermes config set model <m>`, and mirrors
 // the result back into DataStore. Works from Vercel without local CLI access.
 export async function POST(req: Request) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const b = await req.json().catch(() => ({}));
   const model = (b.model || "").toString().trim();
   if (!ALLOWED_MODELS.includes(model)) {
