@@ -24,13 +24,14 @@ export function requiresApproval(kind: string): boolean {
 }
 
 // Which decisions the requests PATCH route may apply to a row of this kind.
-// approve: only kinds the executor knows. edit: never for cron.* rows (their
-// prompt is Zod-validated JSON; an edit would bypass validation).
+// approve: only kinds the executor knows. edit: never. It rewrites the prompt AND
+// approves the row, so for cron.* rows it would bypass Zod validation and for
+// any other kind it would bypass the approve check. Every executor kind is cron.*.
 // reject: always, so old rows can be cleared.
 export function decisionAllowed(kind: string, action: 'approve' | 'reject' | 'edit'): boolean {
   if (action === 'reject') return true;
   if (action === 'approve') return isAllowed(kind);
-  return !kind.startsWith('cron.');
+  return false;
 }
 
 export const jobIdSchema = z.string().regex(/^[0-9a-f]{12}$/);

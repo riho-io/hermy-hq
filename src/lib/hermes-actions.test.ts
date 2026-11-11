@@ -35,6 +35,9 @@ test('decisionAllowed', () => {
   assert.equal(decisionAllowed('oneshot', 'approve'), false);
   assert.equal(decisionAllowed('cron.schedule', 'approve'), true);
   assert.equal(decisionAllowed('cron.schedule', 'edit'), false);
+  // edit also approves the row: it must not open a path around the approve check
+  assert.equal(decisionAllowed('oneshot', 'edit'), false);
+  assert.equal(decisionAllowed('kanban', 'edit'), false);
   assert.equal(decisionAllowed('oneshot', 'reject'), true);
   assert.equal(decisionAllowed('cron.schedule', 'reject'), true);
 });

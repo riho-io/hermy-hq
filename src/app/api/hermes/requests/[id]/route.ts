@@ -17,7 +17,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (action === "approve" && !decisionAllowed(existing.kind, "approve"))
     return NextResponse.json({ error: "kind not supported" }, { status: 409 });
   if (action === "edit" && !decisionAllowed(existing.kind, "edit"))
-    return NextResponse.json({ error: "cron rows cannot be edited" }, { status: 400 });
+    return NextResponse.json({ error: "edit not supported" }, { status: 400 });
 
   const data: Record<string, unknown> = { decidedAt: new Date() };
   if (action === "approve") data.status = "approved";
