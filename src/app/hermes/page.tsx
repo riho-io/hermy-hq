@@ -7,16 +7,13 @@ import {
   X,
   Pencil,
   Inbox,
-  Zap,
   Activity as ActivityIcon,
   LayoutGrid,
-  Target,
   Cpu,
 } from "lucide-react";
 import {
   Panel,
   SectionHeader,
-  Button,
   Pill,
   EmptyState,
   Skeleton,
@@ -195,82 +192,6 @@ function DispatchBar() {
   return (
     <Panel className="p-5">
       <p className="text-[13px] text-[var(--text-2)]">Vaba tekstiga käsud käivad CC kaudu.</p>
-    </Panel>
-  );
-}
-
-// ── Goal Mode ─────────────────────────────────────────────
-// Send a long-running autonomous goal to Hermes (bridge runs it with a
-// longer timeout). Mirrors Julian's "goal mode": one prompt, hours of work.
-function GoalModeCard({ onDone }: { onDone: () => void }) {
-  const [goal, setGoal] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const flash = (msg: string) => {
-    setToast(msg);
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setToast(null), 6000);
-  };
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
-
-  const submit = async () => {
-    if (!goal.trim() || busy) return;
-    setBusy(true);
-    try {
-      const r = await fetch("/api/hermes/dispatch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // Goal mode is the most autonomous action — it MUST go through the
-        // approval gate before the bridge will run it.
-        body: JSON.stringify({ kind: "goal", sideEffecting: true, title: goal.trim().slice(0, 200), prompt: goal.trim() }),
-      });
-      const d = await r.json().catch(() => ({}));
-      if (r.ok) {
-        setGoal("");
-        flash("Eesmärk saadetud kinnitussisendisse — kinnita see, siis hakkab Hermes tööle!");
-      } else {
-        flash("Saatmine ebaõnnestus. Proovi uuesti.");
-      }
-      onDone();
-    } catch {
-      flash("Saatmine ebaõnnestus. Proovi uuesti.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Panel className="p-5">
-      <div className="flex items-center gap-2.5 mb-3">
-        <Target className="w-4 h-4" style={{ color: "var(--accent)" }} />
-        <Eyebrow>Eesmärgirežiim</Eyebrow>
-        <Pill tone="accent">goal mode</Pill>
-      </div>
-      <p className="text-[12.5px] text-[var(--text-3)] mb-3">
-        Anna üks suur eesmärk — Hermes töötab selle kallal tunde iseseisvalt. Eesmärk läheb esmalt kinnitussisendisse (turvalisus!).
-      </p>
-      <textarea
-        value={goal}
-        onChange={(e) => setGoal(e.target.value)}
-        rows={3}
-        placeholder="Nt: uuri ja koosta terve nädala sisu meie publikule…"
-        className="w-full bg-transparent text-[13.5px] text-[var(--text)] placeholder:text-[var(--text-3)] px-3.5 py-2.5 rounded-[10px] border border-[var(--line)] focus:border-[color-mix(in_srgb,var(--accent)_45%,transparent)] outline-none transition-colors resize-y"
-      />
-      <div className="flex items-center justify-between mt-3">
-        <span className="text-[11px] text-[var(--text-3)] num">kuni 30 min autonoomset tööd</span>
-        <Button variant="primary" onClick={submit} disabled={busy || !goal.trim()}>
-          <Zap className="w-3.5 h-3.5" />
-          {busy ? "Saadan…" : "Käivita eesmärk"}
-        </Button>
-      </div>
-      {toast && (
-        <p className="mt-3 text-[12.5px] text-[var(--text-2)] flex items-center gap-1.5">
-          <Check className="w-3.5 h-3.5" style={{ color: "var(--up)" }} />
-          {toast}
-        </p>
-      )}
     </Panel>
   );
 }
@@ -723,9 +644,8 @@ export default function HermesPage() {
           <DispatchBar />
         </div>
 
-        {/* Goal Mode + Model switching — Julian-style extras */}
+        {/* Model switching. Goal mode was removed: dispatch no longer accepts kind "goal". */}
         <div className="mt-5 grid grid-cols-1 xl:grid-cols-2 gap-5 items-start hq-rise">
-          <GoalModeCard onDone={load} />
           <ModelSwitcher />
         </div>
 

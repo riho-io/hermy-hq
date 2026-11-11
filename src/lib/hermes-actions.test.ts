@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DELIVER_PRESETS, deliverPreset, decisionAllowed, isAllowed, requiresApproval, jobIdSchema, profileSchema, presetSchema, scheduleSchema } from './hermes-actions';
+import { DELIVER_PRESETS, deliverPreset, decisionAllowed, isAllowed, requiresApproval, jobIdSchema, profileSchema, presetSchema, scheduleSchema, maskChatIds } from './hermes-actions';
 
 test('approval rules', () => {
   for (const k of ['cron.pause', 'cron.resume', 'cron.run', 'cron.deliver']) assert.equal(requiresApproval(k), false, k);
@@ -50,4 +50,11 @@ test('deliverPreset maps raw targets to a preset name', () => {
   assert.equal(deliverPreset('local', 'local'), 'vait');
   assert.equal(deliverPreset('local', null), 'muu');
   assert.equal(deliverPreset('discord:1', null), 'muu');
+});
+
+test('maskChatIds hides telegram targets in error text', () => {
+  assert.equal(maskChatIds('send to telegram:-100123456 failed'), 'send to telegram:*** failed');
+  assert.equal(maskChatIds('telegram:1,telegram:2:7 x'), 'telegram:***,telegram:*** x');
+  assert.equal(maskChatIds('no target here'), 'no target here');
+  assert.equal(maskChatIds(null), null);
 });

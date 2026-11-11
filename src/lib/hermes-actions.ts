@@ -52,3 +52,8 @@ export function deliverPreset(deliver: string | null, failureDeliver: string | n
   if (local(deliver) && failureDeliver === 'local') return 'vait';
   return 'muu';
 }
+
+// Error text from Argo can quote deliver targets; chat ids stay on the server.
+export function maskChatIds<T extends string | null>(text: T): T {
+  return (text === null ? null : text.replace(/telegram:[^\s,]+/g, 'telegram:***')) as T;
+}

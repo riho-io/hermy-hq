@@ -56,3 +56,13 @@ export function canTransition(from: string, to: ReportStatus, kind: string): boo
   if (to === 'running' && from === 'queued') return !requiresApproval(kind);
   return true;
 }
+
+// `?ids=` for GET /api/hermes/requests: null when absent, 'invalid' when malformed.
+const CUIDISH = /^[a-z0-9]{1,40}$/;
+export const MAX_IDS = 20;
+export function parseIdsParam(raw: string | null): string[] | null | 'invalid' {
+  if (raw === null) return null;
+  const ids = raw.split(',');
+  if (ids.length > MAX_IDS || !ids.every((id) => CUIDISH.test(id))) return 'invalid';
+  return ids;
+}

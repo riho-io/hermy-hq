@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyRow, parsePayload, canTransition, fromStatuses } from './hermes-requests';
+import { classifyRow, parsePayload, canTransition, fromStatuses, parseIdsParam } from './hermes-requests';
 
 const row = (kind: string, status: string, prompt: string | null = JSON.stringify({ jobId: 'abcdef012345', profile: 'default' })) => ({
   kind,
@@ -55,4 +55,16 @@ test('transitions', () => {
   assert.equal(canTransition('done', 'failed', 'cron.pause'), false);
   assert.deepEqual(fromStatuses('done'), ['running']);
   assert.deepEqual(fromStatuses('running'), ['queued', 'approved']);
+});
+
+test('parseIdsParam: cuid-ish ids, max 20, anything else rejected', () => {
+  assert.equal(parseIdsParam(null), null); // absent -> no filter
+  assert.deepEqual(parseIdsParam('cmabc123def456ghi789jkl0,cmxyz987'), ['cmabc123def456ghi789jkl0', 'cmxyz987']);
+  assert.equal(parseIdsParam(''), 'invalid');
+  assert.equal(parseIdsParam('a,,b'), 'invalid');
+  assert.equal(parseIdsParam('abc;drop'), 'invalid');
+  assert.equal(parseIdsParam('ABC'), 'invalid');
+  assert.equal(parseIdsParam('x'.repeat(41)), 'invalid');
+  assert.equal(parseIdsParam(Array.from({ length: 21 }, (_, i) => `c${i}abc`).join(',')), 'invalid');
+  assert.equal(parseIdsParam(Array.from({ length: 20 }, (_, i) => `c${i}abc`).join(','))?.length, 20);
 });

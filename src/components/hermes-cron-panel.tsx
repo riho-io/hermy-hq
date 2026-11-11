@@ -55,10 +55,14 @@ export function CronPanel({ jobs, syncedAt, onDone }: { jobs: CronJob[]; syncedA
   const [schedules, setSchedules] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // Source of truth for reads outside render; every write goes through commitReqs so ref and state never drift.
   const reqsRef = useRef(reqs);
-  useEffect(() => {
-    reqsRef.current = reqs;
-  }, [reqs]);
+  const commitReqs = useCallback((next: Record<string, ReqState>) => {
+    reqsRef.current = next;
+    setReqs(next);
+  }, []);
+  const pollAbort = useRef<AbortController | null>(null);
+  useEffect(() => () => pollAbort.current?.abort(), []);
 
   const send = async (job: CronJob, body: Record<string, string>) => {
     setBusy(job.id);
@@ -75,7 +79,7 @@ export function CronPanel({ jobs, syncedAt, onDone }: { jobs: CronJob[]; syncedA
         return;
       }
       const q = j.request;
-      setReqs((p) => ({ ...p, [job.id]: { id: q.id, status: q.status, error: q.error ?? null } }));
+      commitReqs({ ...reqsRef.current, [job.id]: { id: q.id, status: q.status, error: q.error ?? null } });
     } catch {
       setErrors((e) => ({ ...e, [job.id]: "Päring ebaõnnestus." }));
     } finally {
@@ -86,28 +90,33 @@ export function CronPanel({ jobs, syncedAt, onDone }: { jobs: CronJob[]; syncedA
   const pollOnce = useCallback(async () => {
     const open = Object.values(reqsRef.current).filter((r) => !TERMINAL.has(r.status));
     if (open.length === 0) return;
+    pollAbort.current?.abort(); // a slow previous tick must not land after this one
+    const ctrl = new AbortController();
+    pollAbort.current = ctrl;
     try {
-      const r = await fetch("/api/hermes/requests?take=100");
+      const ids = open.slice(0, 20).map((r) => r.id).join(","); // route caps ?ids= at 20
+      const r = await fetch(`/api/hermes/requests?ids=${encodeURIComponent(ids)}`, { signal: ctrl.signal });
       if (!r.ok) return;
       const { requests } = (await r.json()) as { requests: { id: string; status: string; error: string | null }[] };
       const byId = new Map(requests.map((q) => [q.id, q]));
+      const prev = reqsRef.current; // read after the await: send() may have added a request meanwhile
+      const next = { ...prev };
+      let changed = false;
       let finished = false;
-      setReqs((prev) => {
-        const next = { ...prev };
-        for (const [jobId, cur] of Object.entries(prev)) {
-          const q = byId.get(cur.id);
-          if (q && q.status !== cur.status) {
-            next[jobId] = { id: cur.id, status: q.status, error: q.error ?? null };
-            if (TERMINAL.has(q.status)) finished = true;
-          }
+      for (const [jobId, cur] of Object.entries(prev)) {
+        const q = byId.get(cur.id);
+        if (q && q.status !== cur.status) {
+          next[jobId] = { id: cur.id, status: q.status, error: q.error ?? null };
+          changed = true;
+          if (TERMINAL.has(q.status)) finished = true;
         }
-        return next;
-      });
+      }
+      if (changed) commitReqs(next);
       if (finished) onDone();
     } catch {
-      /* next tick retries */
+      /* aborted, or next tick retries */
     }
-  }, [onDone]);
+  }, [onDone, commitReqs]);
 
   const hasOpen = Object.values(reqs).some((r) => !TERMINAL.has(r.status));
   useEffect(() => {

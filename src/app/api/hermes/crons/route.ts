@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
-import { isAllowed, requiresApproval, jobIdSchema, profileSchema, presetSchema, scheduleSchema, deliverPreset, type DeliverState } from "@/lib/hermes-actions";
+import { isAllowed, requiresApproval, jobIdSchema, profileSchema, presetSchema, scheduleSchema, deliverPreset, maskChatIds, type DeliverState } from "@/lib/hermes-actions";
 
 export type CronJob = {
   id: string;
@@ -32,7 +32,7 @@ export async function GET() {
     nextRun: r.nextRunAt?.toISOString() ?? null,
     lastRun: r.lastRunAt?.toISOString() ?? null,
     lastStatus: r.lastStatus,
-    lastError: r.lastError,
+    lastError: maskChatIds(r.lastError),
     failureStreak: r.failureStreak,
     telegram: deliverPreset(r.deliver, r.failureDeliver),
   }));
