@@ -594,6 +594,9 @@ model AgentJob {
   lastError     String?   @map("last_error")
   failureStreak Int       @default(0) @map("failure_streak")
   nextRunAt     DateTime? @map("next_run_at")
+  profile       String    @default("default") // Hermes profile that owns the job
+  deliver       String? // raw Hermes deliver target; the UI shows only a preset name, never this value
+  failureDeliver String?  @map("failure_deliver")
   syncedAt      DateTime  @default(now()) @map("synced_at")
 
   @@index([source])

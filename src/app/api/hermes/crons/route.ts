@@ -1,64 +1,43 @@
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
-import { isAllowed, requiresApproval, jobIdSchema, profileSchema, presetSchema, scheduleSchema } from "@/lib/hermes-actions";
+import { isAllowed, requiresApproval, jobIdSchema, profileSchema, presetSchema, scheduleSchema, deliverPreset, type DeliverState } from "@/lib/hermes-actions";
 
 export type CronJob = {
   id: string;
-  status: string;           // "active" | "paused"
+  profile: string;
   name: string;
+  status: "active" | "paused";
   schedule: string;
   nextRun: string | null;
   lastRun: string | null;
-  lastResult: string | null;
-  deliver: string | null;
-  skills: string | null;
-  script: string | null;
-  mode: string | null;
+  lastStatus: string | null;
+  lastError: string | null;
+  failureStreak: number;
+  // Preset name only; the raw deliver targets hold chat ids and stay on the server.
+  telegram: DeliverState;
 };
 
-// Parse the raw `hermes cron list --all` terminal output into clean objects.
-// Format per job: two-space-indented "<id> [status]" then four-space "Key: value" lines.
-function parseCrons(raw: string): CronJob[] {
-  const jobs: CronJob[] = [];
-  let cur: CronJob | null = null;
-  const push = () => { if (cur) jobs.push(cur); };
-  for (const line of raw.split("\n")) {
-    const head = line.match(/^\s{2}([0-9a-f]{6,})\s+\[(\w+)\]/);
-    if (head) {
-      push();
-      cur = { id: head[1], status: head[2], name: "", schedule: "", nextRun: null, lastRun: null, lastResult: null, deliver: null, skills: null, script: null, mode: null };
-      continue;
-    }
-    const kv = line.match(/^\s{4}([A-Za-z][A-Za-z ]*?):\s+(.*)$/);
-    if (kv && cur) {
-      const key = kv[1].trim().toLowerCase();
-      const val = kv[2].trim();
-      if (key === "name") cur.name = val;
-      else if (key === "schedule") cur.schedule = val;
-      else if (key === "next run") cur.nextRun = val;
-      else if (key === "deliver") cur.deliver = val;
-      else if (key === "skills") cur.skills = val;
-      else if (key === "script") cur.script = val;
-      else if (key === "mode") cur.mode = val;
-      else if (key === "last run") {
-        const m = val.match(/^(\S+)\s+(.*)$/);
-        cur.lastRun = m ? m[1] : val;
-        cur.lastResult = m ? m[2] : null;
-      }
-    }
-  }
-  push();
-  return jobs;
-}
-
+// Jobs come from AgentJob, filled by hermy_cron_sync.py (all profiles) via /api/ingest/hermes-cron.
 export async function GET() {
   const denied = await requireSession();
   if (denied) return denied;
-  const row = await prisma.dataStore.findUnique({ where: { key: "hermes-crons" } });
-  const data = (row?.data as { raw?: string; syncedAt?: string } | null) ?? {};
-  const jobs = data.raw ? parseCrons(data.raw) : [];
-  return NextResponse.json({ jobs, syncedAt: data.syncedAt ?? null });
+  const rows = await prisma.agentJob.findMany({ orderBy: [{ profile: "asc" }, { name: "asc" }] });
+  const jobs: CronJob[] = rows.map((r) => ({
+    id: r.id,
+    profile: r.profile,
+    name: r.name,
+    status: r.enabled && r.state !== "paused" ? "active" : "paused",
+    schedule: r.schedule,
+    nextRun: r.nextRunAt?.toISOString() ?? null,
+    lastRun: r.lastRunAt?.toISOString() ?? null,
+    lastStatus: r.lastStatus,
+    lastError: r.lastError,
+    failureStreak: r.failureStreak,
+    telegram: deliverPreset(r.deliver, r.failureDeliver),
+  }));
+  const syncedAt = rows.reduce<Date | null>((m, r) => (!m || r.syncedAt > m ? r.syncedAt : m), null);
+  return NextResponse.json({ jobs, syncedAt: syncedAt?.toISOString() ?? null });
 }
 
 // POST { op: "pause"|"resume"|"run"|"deliver"|"schedule", id, profile?, preset?|schedule? }

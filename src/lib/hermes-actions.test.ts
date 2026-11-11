@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DELIVER_PRESETS, decisionAllowed, isAllowed, requiresApproval, jobIdSchema, profileSchema, presetSchema, scheduleSchema } from './hermes-actions';
+import { DELIVER_PRESETS, deliverPreset, decisionAllowed, isAllowed, requiresApproval, jobIdSchema, profileSchema, presetSchema, scheduleSchema } from './hermes-actions';
 
 test('approval rules', () => {
   for (const k of ['cron.pause', 'cron.resume', 'cron.run', 'cron.deliver']) assert.equal(requiresApproval(k), false, k);
@@ -40,4 +40,14 @@ test('decisionAllowed', () => {
   assert.equal(decisionAllowed('kanban', 'edit'), false);
   assert.equal(decisionAllowed('oneshot', 'reject'), true);
   assert.equal(decisionAllowed('cron.schedule', 'reject'), true);
+});
+
+test('deliverPreset maps raw targets to a preset name', () => {
+  assert.equal(deliverPreset('local', 'telegram:1'), 'raport');
+  assert.equal(deliverPreset(null, 'telegram'), 'raport');
+  assert.equal(deliverPreset('telegram:1', null), 'hoiatus');
+  assert.equal(deliverPreset('telegram:1', 'local'), 'hoiatus');
+  assert.equal(deliverPreset('local', 'local'), 'vait');
+  assert.equal(deliverPreset('local', null), 'muu');
+  assert.equal(deliverPreset('discord:1', null), 'muu');
 });

@@ -133,6 +133,27 @@ class ReportSources(unittest.TestCase):
         self.assertNotIn(s.HERMES_HOME / "profiles" / "empty" / "cron", s.cron_dirs())
 
 
+class LoadJobs(ReportSources):
+    def test_all_profiles_with_profile_and_deliver(self):
+        _jobs_json(s.HERMES, [{"id": "aaa", "name": "Uudised", "deliver": "local", "failure_deliver": "telegram:123", "state": "paused"},
+                              {"id": "bad id"}, {"name": "no id"}])
+        jobs = {j["id"]: j for j in s.load_jobs()}
+        self.assertEqual(sorted(jobs), ["aaa", "bbb", "ccc", "ddd"])
+        self.assertEqual(jobs["aaa"]["profile"], "default")  # first wins over dubi's duplicate
+        self.assertEqual(jobs["aaa"]["deliver"], "local")
+        self.assertEqual(jobs["aaa"]["failureDeliver"], "telegram:123")
+        self.assertEqual(jobs["aaa"]["state"], "paused")
+        self.assertEqual(jobs["bbb"]["profile"], "dubi")
+        self.assertIsNone(jobs["bbb"]["deliver"])
+        self.assertIsNone(jobs["bbb"]["failureDeliver"])
+
+    def test_nothing_readable_raises(self):
+        for f in list(s.HERMES_HOME.rglob("jobs.json")):
+            f.write_text("{bad", encoding="utf-8")
+        with self.assertRaises(FileNotFoundError):
+            s.load_jobs()
+
+
 class SyncReportsExclude(unittest.TestCase):
     PATCHED = ("load_report_sources", "load_report_exclude", "read_report_state", "write_report_state", "push")
 

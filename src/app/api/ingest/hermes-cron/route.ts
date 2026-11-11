@@ -33,6 +33,10 @@ const Job = z.object({
   lastError: clipped(2000).nullable(),
   failureStreak: z.number().int().min(0).max(100_000),
   nextRunAt: ts.nullable(),
+  // Optional: payloads from an older hermy_cron_sync.py omit them.
+  profile: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,31}$/).optional(),
+  deliver: z.string().max(200).nullable().optional(),
+  failureDeliver: z.string().max(200).nullable().optional(),
 });
 
 const Run = z.object({

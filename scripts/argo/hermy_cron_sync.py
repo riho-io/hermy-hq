@@ -50,27 +50,56 @@ RUN_STEM = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")
 JOB_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
+def _opt_str(v):
+    return v if isinstance(v, str) and v else None
+
+
 def load_jobs():
-    data = json.loads((HERMES / "jobs.json").read_text(encoding="utf-8"))
-    jobs = data["jobs"] if isinstance(data, dict) else data
-    if isinstance(jobs, dict):
-        jobs = list(jobs.values())
+    """Jobs of every profile (default first; the first profile wins a duplicate id).
+
+    A broken or half-written jobs.json is skipped like in load_report_sources, but when no
+    profile could be read at all this raises: the route deletes jobs missing from the snapshot,
+    so an empty list from a read failure would wipe the dashboard.
+    """
     out = []
-    for j in jobs:
-        sched = j.get("schedule")
-        out.append({
-            "id": j["id"],
-            "name": j.get("name") or j["id"],
-            "schedule": j.get("schedule_display") or (sched.get("display") if isinstance(sched, dict) else str(sched or "")),
-            "state": j.get("state") or "unknown",
-            "enabled": bool(j.get("enabled", True)),
-            "noAgent": bool(j.get("no_agent", False)),
-            "lastRunAt": j.get("last_run_at"),
-            "lastStatus": j.get("last_status"),
-            "lastError": j.get("last_error"),
-            "failureStreak": int(j.get("failure_streak") or 0),
-            "nextRunAt": j.get("next_run_at"),
-        })
+    seen = set()
+    read_any = False
+    for d in cron_dirs():
+        try:
+            data = json.loads((d / "jobs.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        jobs = data.get("jobs", []) if isinstance(data, dict) else data
+        if isinstance(jobs, dict):
+            jobs = list(jobs.values())
+        if not isinstance(jobs, list):
+            continue
+        read_any = True
+        profile = "default" if d == HERMES else d.parent.name
+        for j in jobs:
+            jid = j.get("id") if isinstance(j, dict) else None
+            if not (isinstance(jid, str) and JOB_ID.match(jid)) or jid in seen:
+                continue
+            seen.add(jid)
+            sched = j.get("schedule")
+            out.append({
+                "id": jid,
+                "name": j.get("name") or jid,
+                "schedule": j.get("schedule_display") or (sched.get("display") if isinstance(sched, dict) else str(sched or "")),
+                "state": j.get("state") or "unknown",
+                "enabled": bool(j.get("enabled", True)),
+                "noAgent": bool(j.get("no_agent", False)),
+                "lastRunAt": j.get("last_run_at"),
+                "lastStatus": j.get("last_status"),
+                "lastError": j.get("last_error"),
+                "failureStreak": int(j.get("failure_streak") or 0),
+                "nextRunAt": j.get("next_run_at"),
+                "profile": profile,
+                "deliver": _opt_str(j.get("deliver")),
+                "failureDeliver": _opt_str(j.get("failure_deliver")),
+            })
+    if not read_any:
+        raise FileNotFoundError("no readable jobs.json in any profile")
     return out
 
 

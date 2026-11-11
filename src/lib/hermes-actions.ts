@@ -39,3 +39,16 @@ export const jobIdSchema = z.string().regex(/^[0-9a-f]{12}$/);
 export const profileSchema = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,31}$/);
 export const presetSchema = z.enum(DELIVER_PRESETS);
 export const scheduleSchema = z.string().min(1).max(64).regex(/^[0-9a-z*/,][0-9a-z*/, -]*$/);
+
+export type DeliverState = (typeof DELIVER_PRESETS)[number] | 'muu';
+
+// Maps a job's raw deliver/failure_deliver targets to the preset name the UI shows.
+// The raw values contain chat ids and must never reach the browser; only this name does.
+export function deliverPreset(deliver: string | null, failureDeliver: string | null): DeliverState {
+  const tg = (v: string | null) => v !== null && v.startsWith('telegram');
+  const local = (v: string | null) => v === null || v === '' || v === 'local';
+  if (tg(deliver)) return 'hoiatus';
+  if (local(deliver) && tg(failureDeliver)) return 'raport';
+  if (local(deliver) && failureDeliver === 'local') return 'vait';
+  return 'muu';
+}
