@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireSession } from "@/lib/require-session";
 
 export async function GET(req: Request) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const url = new URL(req.url);
   const status = url.searchParams.get("status"); // e.g. "awaiting_approval"
   const take = Math.min(Number(url.searchParams.get("take") || 50), 200);

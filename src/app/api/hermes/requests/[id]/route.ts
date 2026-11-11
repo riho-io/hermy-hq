@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireSession } from "@/lib/require-session";
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const denied = await requireSession();
+  if (denied) return denied;
   const { id } = await params;
   const b = await req.json().catch(() => ({}));
   const action = (b.action || "").toString(); // approve | reject | edit
