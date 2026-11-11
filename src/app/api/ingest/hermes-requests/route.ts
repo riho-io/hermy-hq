@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { hasIngestSecret } from '@/lib/internal-secret';
 import { classifyRow, fromStatuses, NON_APPROVAL_KINDS } from '@/lib/hermes-requests';
+import { ALLOWED_KINDS } from '@/lib/hermes-actions';
 
 // Pull API for the narrow executor on the Hermes server (x-ingest-secret only).
 // GET: runnable cron requests. POST: executor reports running | done | failed.
@@ -85,7 +86,12 @@ export async function POST(req: NextRequest) {
     // when the row is still queued (approved rows are already cleared by the approve check).
     const where =
       status === 'running'
-        ? { id, OR: [{ status: 'approved' }, { status: 'queued', kind: { in: NON_APPROVAL_KINDS } }] }
+        ? {
+            id,
+            // Only executor kinds can be claimed, even if a caller skips GET's filtering.
+            kind: { in: Object.keys(ALLOWED_KINDS) },
+            OR: [{ status: 'approved' }, { status: 'queued', kind: { in: NON_APPROVAL_KINDS } }],
+          }
         : { id, status: { in: fromStatuses(status) } };
     const { count } = await prisma.agentRequest.updateMany({
       where,
