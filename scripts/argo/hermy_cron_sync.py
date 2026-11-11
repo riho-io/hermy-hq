@@ -246,7 +246,7 @@ def read_secret():
         return secret.strip()
     try:
         return SECRET_FILE.read_text(encoding="utf-8").strip() or None
-    except OSError:
+    except (OSError, ValueError):  # ValueError covers UnicodeDecodeError
         return None
 
 

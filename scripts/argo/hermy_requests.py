@@ -156,7 +156,7 @@ def mask(text, secret=None):
     if t:
         text = text.replace("telegram:" + t, "telegram:***")
         if len(t) >= 5:  # a one-letter target would shred the text
-            text = text.replace(t, "telegram:***")
+            text = text.replace(t, "***")
     if secret:
         text = text.replace(secret, "***")
     return text
@@ -183,25 +183,31 @@ def safe_log(rid, args, code):
 
 def run_row(row, secret):
     rid = row.get("id")
+    """Returns None, or the exception name when reporting after the claim failed."""
     if not isinstance(rid, str):
-        return
+        return None
     try:
         report(rid, "running", secret)
     except urllib.error.HTTPError as e:
         if e.code == 409:
-            return  # someone else claimed it, or it is no longer runnable
+            return None  # someone else claimed it, or it is no longer runnable
         raise
     # Claimed: from here on the row must end as done/failed, never stay "running".
+    ran = []  # [exit code] once the command has actually run
     try:
-        _execute(rid, row, secret)
+        _execute(rid, row, secret, ran)
+        return None
     except Exception as e:  # noqa: BLE001
+        name = type(e).__name__
+        text = (f"käsk täideti (exit {ran[0]}), tulemuse saatmine ebaõnnestus: {name}" if ran else name)
         try:
-            report(rid, "failed", secret, error=type(e).__name__)
+            report(rid, "failed", secret, error=mask(text, secret))
         except Exception:  # noqa: BLE001 - best effort only
             pass
+        return name
 
 
-def _execute(rid, row, secret):
+def _execute(rid, row, secret, ran):
     try:
         args = build_args(*validate(row))
     except Reject as e:
@@ -217,6 +223,7 @@ def _execute(rid, row, secret):
         safe_log(rid, args, "oserror")
         report(rid, "failed", secret, error=mask(f"{type(e).__name__}: {str(e)[:200]}", secret))
         return
+    ran.append(proc.returncode)
     safe_log(rid, args, proc.returncode)
     out = mask(clean_output(proc.stdout, proc.stderr), secret)
     if proc.returncode == 0:
@@ -226,9 +233,14 @@ def _execute(rid, row, secret):
 
 
 def process(secret):
+    errors = []
     for row in get_requests(secret):
         if isinstance(row, dict):
-            run_row(row, secret)
+            err = run_row(row, secret)
+            if err:
+                errors.append(err)
+    if errors:  # rows were handled best-effort above; surface it so health flips
+        raise RuntimeError(mask(f"{len(errors)} rea tulemuse saatmine ebaõnnestus ({', '.join(sorted(set(errors)))})", secret))
 
 
 def read_state():
@@ -256,7 +268,7 @@ def acquire_lock():
     try:
         path = sync.HERMES / "hermy_requests.lock"
         path.parent.mkdir(parents=True, exist_ok=True)
-        fh = open(path, "a")
+        fh = os.fdopen(os.open(path, os.O_RDWR | os.O_CREAT, 0o600), "r+")
     except OSError:
         return True, None  # cannot lock: run anyway, claim-first still protects the rows
     try:
@@ -289,7 +301,7 @@ def _main():
     except urllib.error.HTTPError as e:
         ok, detail = False, f"HTTP {e.code}"
     except Exception as e:  # noqa: BLE001 - reported once, never the secret
-        ok, detail = False, f"{type(e).__name__}: {str(e)[:200]}"
+        ok, detail = False, mask(f"{type(e).__name__}: {str(e)[:200]}", secret)
 
     if ok != prev.get("ok", True):
         print("hermy-hq täitja taastus" if ok else f"hermy-hq täitja katki: {detail}")

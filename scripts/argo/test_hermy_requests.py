@@ -174,9 +174,11 @@ class Requests(Base):
         old = r.read_target
         r.read_target = bad
         try:
-            last = self.run_rows({"id": "a", "kind": "cron.deliver", "payload": {"jobId": JOB, "profile": "default", "preset": "raport"}})
+            with self.assertRaises(RuntimeError):
+                self.run_rows({"id": "a", "kind": "cron.deliver", "payload": {"jobId": JOB, "profile": "default", "preset": "raport"}})
         finally:
             r.read_target = old
+        last = self.posts[-1]
         self.assertEqual(self.calls, [])
         self.assertEqual(last["status"], "failed")
 
@@ -184,9 +186,10 @@ class Requests(Base):
         def boom(args, **kw):
             raise RuntimeError("x")
         r.subprocess.run = boom
-        last = self.run_rows({"id": "a", "kind": "cron.pause", "payload": {"jobId": JOB, "profile": "default"}})
+        with self.assertRaises(RuntimeError):
+            self.run_rows({"id": "a", "kind": "cron.pause", "payload": {"jobId": JOB, "profile": "default"}})
         self.assertEqual([p["status"] for p in self.posts], ["running", "failed"])
-        self.assertEqual(last["error"], "RuntimeError")
+        self.assertEqual(self.posts[-1]["error"], "RuntimeError")
 
     def test_failed_report_inside_catch_all_never_raises(self):
         def boom(args, **kw):
@@ -198,7 +201,65 @@ class Requests(Base):
                 raise OSError("net")
             base(rid, status, secret, result, error)
         r.report = flaky
+        with self.assertRaises(RuntimeError):
+            self.run_rows({"id": "a", "kind": "cron.pause", "payload": {"jobId": JOB, "profile": "default"}})
+
+    def test_done_post_failure_reports_command_outcome_then_raises(self):
+        base = r.report
+        def flaky(rid, status, secret, result=None, error=None):
+            if status == "done":
+                raise urllib.error.URLError("net")
+            base(rid, status, secret, result, error)
+        r.report = flaky
+        with self.assertRaises(RuntimeError):
+            self.run_rows({"id": "a", "kind": "cron.run", "payload": {"jobId": JOB, "profile": "default"}})
+        self.assertEqual([p["status"] for p in self.posts], ["running", "failed"])
+        self.assertEqual(self.posts[-1]["error"], "käsk täideti (exit 0), tulemuse saatmine ebaõnnestus: URLError")
+
+    def test_batch_continues_after_reporting_error(self):
+        base = r.report
+        def flaky(rid, status, secret, result=None, error=None):
+            if status == "done" and rid == "a":
+                raise urllib.error.URLError("net")
+            base(rid, status, secret, result, error)
+        r.report = flaky
+        pay = {"jobId": JOB, "profile": "default"}
+        with self.assertRaises(RuntimeError) as cm:
+            self.run_rows({"id": "a", "kind": "cron.pause", "payload": pay}, {"id": "b", "kind": "cron.pause", "payload": pay})
+        self.assertIn("1", str(cm.exception))
+        self.assertIn(("b", "done"), [(p["id"], p["status"]) for p in self.posts])
+
+    def test_claim_409_does_not_raise(self):
+        self.claim_code = 409
         self.run_rows({"id": "a", "kind": "cron.pause", "payload": {"jobId": JOB, "profile": "default"}})
+
+    def test_bare_target_masked(self):
+        r.TARGET_FILE.write_text("-100123456\n", encoding="utf-8")
+        self.assertEqual(r.mask("-100123456"), "***")
+        self.assertEqual(r.mask("a telegram:-100123456 b -100123456"), "a telegram:*** b ***")
+
+    def test_health_detail_masked(self):
+        r.read_secret = lambda: "sekret123"
+        try:
+            def broken(secret):
+                raise RuntimeError("bad sekret123 here")
+            r.get_requests = broken
+            out = io.StringIO()
+            with redirect_stdout(out):
+                r.main()
+            self.assertNotIn("sekret123", out.getvalue())
+            self.assertNotIn("sekret123", r.STATE_FILE.read_text(encoding="utf-8"))
+        finally:
+            r.read_secret = sync.read_secret
+
+    @unittest.skipIf(os.name == "nt", "POSIX modes")
+    def test_lock_file_is_0600(self):
+        got, fh = r.acquire_lock()
+        try:
+            self.assertEqual((sync.HERMES / "hermy_requests.lock").stat().st_mode & 0o777, 0o600)
+        finally:
+            if fh:
+                fh.close()
 
     def test_timeout_text(self):
         def slow(args, **kw):

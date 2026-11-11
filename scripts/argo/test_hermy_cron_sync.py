@@ -180,5 +180,19 @@ class ReportExclude(unittest.TestCase):
                 s.REPORT_EXCLUDE_FILE = old
 
 
+class ReadSecret(unittest.TestCase):
+    def test_non_utf8_secret_file_returns_none(self):
+        with tempfile.TemporaryDirectory() as d:
+            old = (s.SECRET_FILE, os.environ.pop("INGEST_SECRET", None))
+            s.SECRET_FILE = Path(d) / "secret"
+            s.SECRET_FILE.write_bytes(b"\xff\xfe\x00bad")
+            try:
+                self.assertIsNone(s.read_secret())
+            finally:
+                s.SECRET_FILE = old[0]
+                if old[1] is not None:
+                    os.environ["INGEST_SECRET"] = old[1]
+
+
 if __name__ == "__main__":
     unittest.main()
