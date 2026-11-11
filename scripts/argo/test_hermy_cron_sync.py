@@ -111,6 +111,11 @@ class ReportSources(unittest.TestCase):
         bad = s.HERMES_HOME / "profiles" / "broken" / "cron"
         bad.mkdir(parents=True)
         (bad / "jobs.json").write_text("{not json", encoding="utf-8")
+        for name, raw in [("jnull", "null"), ("jnum", "42"), ("jjobsnull", '{"jobs": null}'),
+                          ("jmixed", '{"jobs": ["str", {"id": "ddd", "name": "D"}]}')]:
+            wrong = s.HERMES_HOME / "profiles" / name / "cron"
+            wrong.mkdir(parents=True)
+            (wrong / "jobs.json").write_text(raw, encoding="utf-8")
 
     def tearDown(self):
         s.HERMES_HOME, s.HERMES = self.old
@@ -118,7 +123,7 @@ class ReportSources(unittest.TestCase):
 
     def test_all_profiles_first_wins_invalid_dropped(self):
         src = s.load_report_sources()
-        self.assertEqual(sorted(src), ["aaa", "bbb", "ccc"])
+        self.assertEqual(sorted(src), ["aaa", "bbb", "ccc", "ddd"])
         self.assertEqual(src["aaa"], (s.HERMES / "output" / "aaa", "Uudised"))
         self.assertEqual(src["bbb"], (s.HERMES_HOME / "profiles" / "dubi" / "cron" / "output" / "bbb", "Radar"))
         self.assertEqual(src["ccc"][1], "ccc")  # name falls back to id
@@ -126,6 +131,40 @@ class ReportSources(unittest.TestCase):
     def test_cron_dirs_default_first(self):
         self.assertEqual(s.cron_dirs()[0], s.HERMES)
         self.assertNotIn(s.HERMES_HOME / "profiles" / "empty" / "cron", s.cron_dirs())
+
+
+class SyncReportsExclude(unittest.TestCase):
+    PATCHED = ("load_report_sources", "load_report_exclude", "read_report_state", "write_report_state", "push")
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.saved = {n: getattr(s, n) for n in self.PATCHED}
+        root = Path(self.tmp.name)
+        sources = {}
+        for jid in ("keep", "drop"):
+            folder = root / jid
+            folder.mkdir()
+            f = folder / "2026-10-19_10-02-14.md"
+            f.write_text("# Cron Job\n\n**Mode:** no_agent (script)\n\n---\n\nhello\n", encoding="utf-8")
+            old = f.stat().st_mtime - 10 * s.MIN_AGE_S
+            os.utime(f, (old, old))
+            sources[jid] = (folder, jid.upper()[0])
+        self.pushed = []
+        s.load_report_sources = lambda: sources
+        s.load_report_exclude = lambda: {"drop"}
+        s.read_report_state = lambda: set()
+        s.write_report_state = lambda sent: None
+        s.push = lambda url, payload, secret: self.pushed.append(payload)
+
+    def tearDown(self):
+        for n, v in self.saved.items():
+            setattr(s, n, v)
+        self.tmp.cleanup()
+
+    def test_excluded_job_not_pushed(self):
+        self.assertEqual(s.sync_reports("x"), 1)
+        reports = [r for p in self.pushed for r in p["reports"]]
+        self.assertEqual([r["jobId"] for r in reports], ["keep"])
 
 
 class ReportExclude(unittest.TestCase):

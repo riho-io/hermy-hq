@@ -142,6 +142,8 @@ def load_report_sources():
         jobs = data.get("jobs", []) if isinstance(data, dict) else data
         if isinstance(jobs, dict):
             jobs = list(jobs.values())
+        if not isinstance(jobs, list):
+            continue  # valid JSON of the wrong shape: skip this profile too
         for j in jobs:
             jid = j.get("id") if isinstance(j, dict) else None
             if isinstance(jid, str) and JOB_ID.match(jid) and jid not in out:
