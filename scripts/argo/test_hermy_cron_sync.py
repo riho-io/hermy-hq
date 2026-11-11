@@ -172,6 +172,21 @@ class LoadJobs(unittest.TestCase):
         with self.assertRaises(ValueError):
             s.load_jobs()
 
+    def test_read_error_is_retried_once(self):
+        from unittest import mock
+        real = Path.read_text
+        calls = []
+        def flaky(self_, *a, **k):
+            if self_.name == "jobs.json":
+                calls.append(str(self_))
+                if len(calls) == 1:
+                    return "{half"
+            return real(self_, *a, **k)
+        with mock.patch.object(Path, "read_text", flaky), mock.patch.object(s.time, "sleep") as sl:
+            jobs = s.load_jobs()
+        self.assertEqual(sorted(j["id"] for j in jobs), ["aaa", "bbb"])
+        sl.assert_called_once_with(0.5)
+
     def test_wrong_shape_existing_file_raises(self):
         for raw in ("null", "42", '{"jobs": null}', '"x"'):
             with self.subTest(raw=raw):

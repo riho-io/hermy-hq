@@ -219,6 +219,19 @@ def _execute(rid, row, secret, ran):
     except Reject as e:
         report(rid, "failed", secret, error=mask(str(e), secret))
         return
+    if row.get("kind") == "cron.run":
+        # `hermes cron run` blocks until the job ends (minutes for LLM crons): start it detached.
+        try:
+            subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=True)
+        except OSError as e:
+            safe_log(rid, args, "oserror")
+            report(rid, "failed", secret, error=mask(f"{type(e).__name__}: {str(e)[:200]}", secret))
+            return
+        ran.append(0)
+        safe_log(rid, args, "detached")
+        report(rid, "done", secret, result="käivitatud taustal; tulemus tuleb raportite lehele")
+        return
     try:
         proc = subprocess.run(args, timeout=CMD_TIMEOUT_S, capture_output=True, text=True)
     except subprocess.TimeoutExpired:

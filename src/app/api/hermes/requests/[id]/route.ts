@@ -11,9 +11,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const action = (b.action || "").toString(); // approve | reject | edit
   const existing = await prisma.agentRequest.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "not found" }, { status: 404 });
-  if (!["awaiting_approval", "queued"].includes(existing.status))
-    return NextResponse.json({ error: `cannot decide a ${existing.status} request` }, { status: 409 });
-
   if (action === "approve" && !decisionAllowed(existing.kind, "approve"))
     return NextResponse.json({ error: "kind not supported" }, { status: 409 });
   if (action === "edit" && !decisionAllowed(existing.kind, "edit"))
@@ -25,6 +22,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   else if (action === "edit") { data.status = "approved"; if (b.prompt) data.prompt = b.prompt.toString(); if (b.title) data.title = b.title.toString().slice(0, 200); }
   else return NextResponse.json({ error: "action must be approve|reject|edit" }, { status: 400 });
 
-  const row = await prisma.agentRequest.update({ where: { id }, data });
+  // The status precondition is part of the write: the executor may claim the row (running) after the
+  // findUnique above, and a plain update would overwrite that. Zero rows = someone else won.
+  const { count } = await prisma.agentRequest.updateMany({
+    where: { id, status: { in: ["awaiting_approval", "queued"] } },
+    data,
+  });
+  if (count === 0) return NextResponse.json({ error: "Conflict" }, { status: 409 });
+  const row = await prisma.agentRequest.findUnique({ where: { id } });
   return NextResponse.json({ request: row });
 }

@@ -146,10 +146,52 @@ class Requests(Base):
             self.calls.append((args, kw))
             return subprocess.CompletedProcess(args, 1, "  Command helper: applied 2 secrets\n", "Job not found\n" + "e" * 3000)
         r.subprocess.run = fail
-        last = self.run_rows({"id": "a", "kind": "cron.run", "payload": {"jobId": JOB, "profile": "default"}})
+        last = self.run_rows({"id": "a", "kind": "cron.pause", "payload": {"jobId": JOB, "profile": "default"}})
         self.assertEqual(last["status"], "failed")
         self.assertTrue(last["error"].startswith("Job not found"))
         self.assertEqual(len(last["error"]), 2000)
+
+    def _fake_popen(self):
+        popens = []
+        class P:
+            def __init__(s2, args, **kw):
+                popens.append((args, kw))
+            def wait(s2, *a, **k):
+                raise AssertionError("must not wait")
+            communicate = wait
+        old = r.subprocess.Popen
+        r.subprocess.Popen = P
+        self.addCleanup(setattr, r.subprocess, "Popen", old)
+        return popens
+
+    def test_cron_run_is_detached(self):
+        popens = self._fake_popen()
+        last = self.run_rows({"id": "a", "kind": "cron.run", "payload": {"jobId": JOB, "profile": "default"}})
+        self.assertEqual(self.calls, [])  # subprocess.run not used
+        self.assertEqual(len(popens), 1)
+        args, kw = popens[0]
+        self.assertEqual(args[-3:], ["run", "--", JOB])
+        self.assertTrue(kw["start_new_session"])
+        self.assertEqual((kw["stdin"], kw["stdout"], kw["stderr"]), (subprocess.DEVNULL,) * 3)
+        self.assertEqual((last["status"], last["result"]), ("done", "käivitatud taustal; tulemus tuleb raportite lehele"))
+        self.assertEqual(len(self.jobs_pushes), 1)  # counts as a successful command
+        self.assertIn('"detached"', r.LOG_FILE.read_text(encoding="utf-8"))
+
+    def test_cron_run_popen_oserror_fails(self):
+        def boom(*a, **k):
+            raise FileNotFoundError("hermes")
+        old = r.subprocess.Popen
+        r.subprocess.Popen = boom
+        self.addCleanup(setattr, r.subprocess, "Popen", old)
+        last = self.run_rows({"id": "a", "kind": "cron.run", "payload": {"jobId": JOB, "profile": "default"}})
+        self.assertEqual(last["status"], "failed")
+        self.assertEqual(self.jobs_pushes, [])
+
+    def test_pause_still_uses_run(self):
+        popens = self._fake_popen()
+        self.run_rows({"id": "a", "kind": "cron.pause", "payload": {"jobId": JOB, "profile": "default"}})
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(popens, [])
 
     def test_command_logged(self):
         self.run_rows({"id": "a", "kind": "cron.pause", "payload": {"jobId": JOB, "profile": "default"}})
@@ -220,7 +262,7 @@ class Requests(Base):
             base(rid, status, secret, result, error)
         r.report = flaky
         with self.assertRaises(RuntimeError):
-            self.run_rows({"id": "a", "kind": "cron.run", "payload": {"jobId": JOB, "profile": "default"}})
+            self.run_rows({"id": "a", "kind": "cron.pause", "payload": {"jobId": JOB, "profile": "default"}})
         self.assertEqual([p["status"] for p in self.posts], ["running", "failed"])
         self.assertEqual(self.posts[-1]["error"], "käsk täideti (exit 0), tulemuse saatmine ebaõnnestus: URLError")
 

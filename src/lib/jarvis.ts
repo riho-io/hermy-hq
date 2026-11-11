@@ -1,5 +1,6 @@
 import { summarizeWiki, type WikiGraph, type WikiNote } from '@/lib/wiki-graph';
 import { prisma } from '@/lib/prisma';
+import { maskChatIds } from '@/lib/hermes-actions';
 import { getDublyRevenue, type DublyRevenue } from '@/lib/stripe-dubly';
 
 // Data for the /jarvis page. Read-only; everything here is written by Argo (ingest) or other apps.
@@ -114,7 +115,7 @@ export async function getJarvisData(): Promise<JarvisData> {
     state: j.state,
     lastRunAt: j.lastRunAt,
     lastStatus: j.lastStatus,
-    lastError: j.lastError,
+    lastError: maskChatIds(j.lastError),
     failureStreak: j.failureStreak,
     nextRunAt: j.nextRunAt,
     failing: (j.lastStatus !== null && j.lastStatus !== 'ok') || j.failureStreak > 0,

@@ -67,11 +67,20 @@ def load_jobs():
     read_any = False
     for d in cron_dirs():
         path = d / "jobs.json"
-        try:
-            raw = path.read_text(encoding="utf-8")
-        except FileNotFoundError:
+        missing = False
+        for attempt in (1, 2):  # Hermes may be mid-write: retry the file once before giving up
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                break
+            except FileNotFoundError:
+                missing = True
+                break
+            except (OSError, ValueError):  # unreadable or half-written: raise on the second failure
+                if attempt == 2:
+                    raise
+                time.sleep(0.5)
+        if missing:
             continue
-        data = json.loads(raw)  # ValueError on a broken or half-written file: let it raise
         jobs = data.get("jobs", []) if isinstance(data, dict) else data
         if isinstance(jobs, dict):
             jobs = list(jobs.values())
