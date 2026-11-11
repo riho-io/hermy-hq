@@ -12,12 +12,18 @@ the job id must exist in that profile's jobs.json. Commands are argv lists, neve
 Silent when healthy; prints one line only when its own health flips (cron mails/delivers stdout).
 """
 import json
+import os
 import re
 import subprocess
 import sys
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
+
+try:
+    import fcntl  # POSIX only; without it the overlap lock is skipped
+except ImportError:  # pragma: no cover
+    fcntl = None
 
 import hermy_cron_sync as sync
 
@@ -105,8 +111,10 @@ def job_ids(profile):
 def read_target():
     try:
         return TARGET_FILE.read_text(encoding="utf-8").strip() or None
-    except OSError:
+    except FileNotFoundError:
         return None
+    except (OSError, ValueError):  # unreadable or not UTF-8: not the same as absent
+        raise Reject("telegram_target loetamatu")
 
 
 def build_args(kind, job, profile, extra):
@@ -139,10 +147,38 @@ def clean_output(stdout, stderr):
     return "\n".join(lines).strip()
 
 
+def mask(text, secret=None):
+    """Hide the Telegram target and the ingest secret in anything logged or posted to the web."""
+    try:
+        t = read_target()
+    except Exception:  # noqa: BLE001 - masking must never fail the run
+        t = None
+    if t:
+        text = text.replace("telegram:" + t, "telegram:***")
+        if len(t) >= 5:  # a one-letter target would shred the text
+            text = text.replace(t, "telegram:***")
+    if secret:
+        text = text.replace(secret, "***")
+    return text
+
+
 def log_command(rid, args, code):
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with LOG_FILE.open("a", encoding="utf-8") as f:
-        f.write(json.dumps({"at": datetime.now(timezone.utc).isoformat(), "id": rid, "argv": args, "exit": code}) + "\n")
+    line = json.dumps({"at": datetime.now(timezone.utc).isoformat(), "id": rid, "argv": [mask(a) for a in args], "exit": code})
+    fd = os.open(LOG_FILE, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+    with os.fdopen(fd, "a", encoding="utf-8") as f:
+        f.write(line + "\n")
+    try:
+        os.chmod(LOG_FILE, 0o600)  # the file may predate this fix
+    except OSError:
+        pass
+
+
+def safe_log(rid, args, code):
+    try:
+        log_command(rid, args, code)
+    except Exception:  # noqa: BLE001 - a log failure must not hide the command's outcome
+        pass
 
 
 def run_row(row, secret):
@@ -155,23 +191,34 @@ def run_row(row, secret):
         if e.code == 409:
             return  # someone else claimed it, or it is no longer runnable
         raise
+    # Claimed: from here on the row must end as done/failed, never stay "running".
+    try:
+        _execute(rid, row, secret)
+    except Exception as e:  # noqa: BLE001
+        try:
+            report(rid, "failed", secret, error=type(e).__name__)
+        except Exception:  # noqa: BLE001 - best effort only
+            pass
+
+
+def _execute(rid, row, secret):
     try:
         args = build_args(*validate(row))
     except Reject as e:
-        report(rid, "failed", secret, error=str(e))
+        report(rid, "failed", secret, error=mask(str(e), secret))
         return
     try:
         proc = subprocess.run(args, timeout=CMD_TIMEOUT_S, capture_output=True, text=True)
     except subprocess.TimeoutExpired:
-        log_command(rid, args, "timeout")
-        report(rid, "failed", secret, error=f"timeout {CMD_TIMEOUT_S}s")
+        safe_log(rid, args, "timeout")
+        report(rid, "failed", secret, error=f"timeout {CMD_TIMEOUT_S}s (mõju teadmata)")
         return
     except OSError as e:
-        log_command(rid, args, "oserror")
-        report(rid, "failed", secret, error=f"{type(e).__name__}: {str(e)[:200]}")
+        safe_log(rid, args, "oserror")
+        report(rid, "failed", secret, error=mask(f"{type(e).__name__}: {str(e)[:200]}", secret))
         return
-    log_command(rid, args, proc.returncode)
-    out = clean_output(proc.stdout, proc.stderr)
+    safe_log(rid, args, proc.returncode)
+    out = mask(clean_output(proc.stdout, proc.stderr), secret)
     if proc.returncode == 0:
         report(rid, "done", secret, result=out[:MAX_RESULT])
     else:
@@ -186,16 +233,52 @@ def process(secret):
 
 def read_state():
     try:
-        return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+        data = json.loads(STATE_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {"ok": True}
+    return data if isinstance(data, dict) else {"ok": True}
 
 
 def write_state(ok, detail):
-    STATE_FILE.write_text(json.dumps({"ok": ok, "detail": detail, "at": datetime.now(timezone.utc).isoformat()}), encoding="utf-8")
+    try:
+        fd = os.open(STATE_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps({"ok": ok, "detail": detail, "at": datetime.now(timezone.utc).isoformat()}))
+        os.chmod(STATE_FILE, 0o600)
+    except OSError:
+        pass
+
+
+def acquire_lock():
+    """Non-blocking exclusive lock: (True, handle) to proceed, (False, None) when another tick holds it."""
+    if fcntl is None:
+        return True, None
+    try:
+        path = sync.HERMES / "hermy_requests.lock"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fh = open(path, "a")
+    except OSError:
+        return True, None  # cannot lock: run anyway, claim-first still protects the rows
+    try:
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        fh.close()
+        return False, None
+    return True, fh
 
 
 def main():
+    got, lock = acquire_lock()
+    if not got:
+        return 0  # previous tick still running
+    try:
+        return _main()
+    finally:
+        if lock:
+            lock.close()
+
+
+def _main():
     secret = read_secret()
     prev = read_state()
     try:
@@ -205,7 +288,7 @@ def main():
         ok, detail = True, None
     except urllib.error.HTTPError as e:
         ok, detail = False, f"HTTP {e.code}"
-    except Exception as e:  # noqa: BLE001 — reported once, never the secret
+    except Exception as e:  # noqa: BLE001 - reported once, never the secret
         ok, detail = False, f"{type(e).__name__}: {str(e)[:200]}"
 
     if ok != prev.get("ok", True):

@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -9,6 +10,11 @@ from pathlib import Path
 
 import hermy_cron_sync as sync
 import hermy_requests as r
+
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 
 JOB = "bd90b36ca7b5"
 
@@ -144,6 +150,91 @@ class Requests(Base):
         self.assertIn('"exit": 0', line)
         self.assertIn(JOB, line)
 
+    def test_log_failure_does_not_hide_outcome(self):
+        def boom(*a, **k):
+            raise OSError("disk full")
+        old = r.log_command
+        r.log_command = boom
+        try:
+            self.run_rows({"id": "a", "kind": "cron.pause", "payload": {"jobId": JOB, "profile": "default"}})
+        finally:
+            r.log_command = old
+        self.assertEqual([p["status"] for p in self.posts], ["running", "done"])
+
+    def test_unreadable_target_fails_without_running(self):
+        r.TARGET_FILE.write_bytes(b"\xff\xfe\x00bad")
+        last = self.run_rows({"id": "a", "kind": "cron.deliver", "payload": {"jobId": JOB, "profile": "default", "preset": "raport"}})
+        self.assertEqual(self.calls, [])
+        self.assertEqual(last["status"], "failed")
+        self.assertEqual(last["error"], "telegram_target loetamatu")
+
+    def test_read_target_unicode_error_is_failed(self):
+        def bad():
+            raise UnicodeDecodeError("utf-8", b"", 0, 1, "x")
+        old = r.read_target
+        r.read_target = bad
+        try:
+            last = self.run_rows({"id": "a", "kind": "cron.deliver", "payload": {"jobId": JOB, "profile": "default", "preset": "raport"}})
+        finally:
+            r.read_target = old
+        self.assertEqual(self.calls, [])
+        self.assertEqual(last["status"], "failed")
+
+    def test_unexpected_error_after_claim_ends_failed(self):
+        def boom(args, **kw):
+            raise RuntimeError("x")
+        r.subprocess.run = boom
+        last = self.run_rows({"id": "a", "kind": "cron.pause", "payload": {"jobId": JOB, "profile": "default"}})
+        self.assertEqual([p["status"] for p in self.posts], ["running", "failed"])
+        self.assertEqual(last["error"], "RuntimeError")
+
+    def test_failed_report_inside_catch_all_never_raises(self):
+        def boom(args, **kw):
+            raise RuntimeError("x")
+        r.subprocess.run = boom
+        base = r.report
+        def flaky(rid, status, secret, result=None, error=None):
+            if status == "failed":
+                raise OSError("net")
+            base(rid, status, secret, result, error)
+        r.report = flaky
+        self.run_rows({"id": "a", "kind": "cron.pause", "payload": {"jobId": JOB, "profile": "default"}})
+
+    def test_timeout_text(self):
+        def slow(args, **kw):
+            raise subprocess.TimeoutExpired(args, 60)
+        r.subprocess.run = slow
+        last = self.run_rows({"id": "a", "kind": "cron.pause", "payload": {"jobId": JOB, "profile": "default"}})
+        self.assertEqual(last["error"], "timeout 60s (mõju teadmata)")
+
+    def test_target_and_secret_masked(self):
+        r.TARGET_FILE.write_text("-100123456\n", encoding="utf-8")
+        self.proc_out = ("sent to telegram:-100123456 and -100123456 key secret\n", "")
+        last = self.run_rows({"id": "a", "kind": "cron.deliver", "payload": {"jobId": JOB, "profile": "default", "preset": "raport"}})
+        self.assertIn("telegram:-100123456", self.calls[0][0][-3])  # argv itself is untouched
+        self.assertNotIn("-100123456", last["result"])
+        self.assertNotIn("secret", last["result"])
+        self.assertIn("telegram:***", last["result"])
+        log = r.LOG_FILE.read_text(encoding="utf-8")
+        self.assertNotIn("-100123456", log)
+        self.assertIn("telegram:***", log)
+
+    @unittest.skipIf(os.name == "nt", "POSIX modes")
+    def test_files_are_0600(self):
+        self.run_rows({"id": "a", "kind": "cron.pause", "payload": {"jobId": JOB, "profile": "default"}})
+        r.write_state(True, None)
+        self.assertEqual(r.LOG_FILE.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(r.STATE_FILE.stat().st_mode & 0o777, 0o600)
+
+    def test_state_non_dict_tolerated(self):
+        for bad in ("[]", '"x"', "3", "null"):
+            r.STATE_FILE.write_text(bad, encoding="utf-8")
+            self.assertEqual(r.read_state(), {"ok": True})
+
+    def test_write_state_oserror_swallowed(self):
+        r.STATE_FILE = Path(self.tmp.name) / "no" / "such" / "dir" / "state.json"
+        r.write_state(True, None)
+
 
 class Main(Base):
     def test_silent_when_healthy_and_prints_on_flip(self):
@@ -169,6 +260,25 @@ class Main(Base):
             self.assertIn("taastus", out.getvalue())
         finally:
             r.read_secret = sync.read_secret
+
+
+    @unittest.skipIf(fcntl is None, "needs fcntl")
+    def test_second_tick_skips_while_lock_held(self):
+        got, fh = r.acquire_lock()
+        self.assertTrue(got)
+        try:
+            got2, _ = r.acquire_lock()
+            self.assertFalse(got2)
+            r.read_secret = lambda: (_ for _ in ()).throw(AssertionError("must not run"))
+            try:
+                self.assertEqual(r.main(), 0)
+            finally:
+                r.read_secret = sync.read_secret
+        finally:
+            fh.close()
+        got3, fh3 = r.acquire_lock()
+        self.assertTrue(got3)
+        fh3.close()
 
 
 if __name__ == "__main__":
