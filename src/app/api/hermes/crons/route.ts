@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { isAllowed, requiresApproval, jobIdSchema, profileSchema, presetSchema, scheduleSchema } from "@/lib/hermes-actions";
 
 export type CronJob = {
   id: string;
@@ -57,22 +60,46 @@ export async function GET() {
   return NextResponse.json({ jobs, syncedAt: data.syncedAt ?? null });
 }
 
-// POST { op: "create"|"pause"|"resume"|"run"|"remove"|"edit", ... } → queue a cron mutation for the bridge
+// POST { op: "pause"|"resume"|"run"|"deliver"|"schedule", id, profile?, preset?|schedule? }
+// → queue a cron mutation for the narrow server-side executor. Allowlist lives in hermes-actions.ts.
+// AgentRequest has no metadata column, so {jobId, profile, preset|schedule} is stored as JSON in `prompt`.
 export async function POST(req: Request) {
+  if (process.env.NODE_ENV !== "development") {
+    const session = await getServerSession(authOptions);
+    if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
   const b = await req.json().catch(() => ({}));
   const op = (b.op || "").toString();
-  if (!["create", "pause", "resume", "run", "remove", "edit"].includes(op))
-    return NextResponse.json({ error: "bad op" }, { status: 400 });
-  const label = op === "create" ? `Schedule: ${b.schedule || "?"} — ${b.prompt || b.name || ""}` : `Cron ${op}: ${b.name || b.id || ""}`;
-  const sideEffecting = op === "create" || op === "edit" || op === "remove";
+  if (["create", "edit", "remove"].includes(op))
+    return NextResponse.json({ error: "ei toetata, küsi CC-lt" }, { status: 400 });
+  const kind = `cron.${op}`;
+  if (!isAllowed(kind)) return NextResponse.json({ error: "bad op" }, { status: 400 });
+
+  const jobId = jobIdSchema.safeParse(b.id);
+  const profile = profileSchema.safeParse(b.profile ?? "default");
+  if (!jobId.success || !profile.success)
+    return NextResponse.json({ error: "bad id or profile" }, { status: 400 });
+
+  const meta: Record<string, string> = { jobId: jobId.data, profile: profile.data };
+  if (kind === "cron.deliver") {
+    const preset = presetSchema.safeParse(b.preset);
+    if (!preset.success) return NextResponse.json({ error: "bad preset" }, { status: 400 });
+    meta.preset = preset.data;
+  } else if (kind === "cron.schedule") {
+    const schedule = scheduleSchema.safeParse(b.schedule);
+    if (!schedule.success) return NextResponse.json({ error: "bad schedule" }, { status: 400 });
+    meta.schedule = schedule.data;
+  }
+
+  const needsApproval = requiresApproval(kind);
   const row = await prisma.agentRequest.create({
     data: {
       origin: "web",
-      kind: `cron.${op}`,
-      title: label.slice(0, 200),
-      prompt: JSON.stringify(b),
-      sideEffecting,
-      status: sideEffecting ? "awaiting_approval" : "queued",
+      kind,
+      title: `Cron ${op}: ${jobId.data}${meta.preset ? ` → ${meta.preset}` : ""}${meta.schedule ? ` → ${meta.schedule}` : ""}`.slice(0, 200),
+      prompt: JSON.stringify(meta),
+      sideEffecting: needsApproval,
+      status: needsApproval ? "awaiting_approval" : "queued",
     },
   });
   return NextResponse.json({ request: row });
