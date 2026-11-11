@@ -133,12 +133,25 @@ class ReportSources(unittest.TestCase):
         self.assertNotIn(s.HERMES_HOME / "profiles" / "empty" / "cron", s.cron_dirs())
 
 
-class LoadJobs(ReportSources):
-    def test_all_profiles_with_profile_and_deliver(self):
+class LoadJobs(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.old = (s.HERMES_HOME, s.HERMES)
+        s.HERMES_HOME = Path(self.tmp.name)
+        s.HERMES = s.HERMES_HOME / "cron"
         _jobs_json(s.HERMES, [{"id": "aaa", "name": "Uudised", "deliver": "local", "failure_deliver": "telegram:123", "state": "paused"},
-                              {"id": "bad id"}, {"name": "no id"}])
+                              {"id": "bad id"}, {"name": "no id"}, "str"])
+        _jobs_json(s.HERMES_HOME / "profiles" / "dubi" / "cron", [{"id": "bbb", "name": "Radar"}, {"id": "aaa", "name": "Dup"}])
+        (s.HERMES_HOME / "profiles" / "empty").mkdir(parents=True)  # profile without cron folder
+        (s.HERMES_HOME / "profiles" / "nofile" / "cron").mkdir(parents=True)  # cron folder, no jobs.json
+
+    def tearDown(self):
+        s.HERMES_HOME, s.HERMES = self.old
+        self.tmp.cleanup()
+
+    def test_all_profiles_with_profile_and_deliver(self):
         jobs = {j["id"]: j for j in s.load_jobs()}
-        self.assertEqual(sorted(jobs), ["aaa", "bbb", "ccc", "ddd"])
+        self.assertEqual(sorted(jobs), ["aaa", "bbb"])
         self.assertEqual(jobs["aaa"]["profile"], "default")  # first wins over dubi's duplicate
         self.assertEqual(jobs["aaa"]["deliver"], "local")
         self.assertEqual(jobs["aaa"]["failureDeliver"], "telegram:123")
@@ -147,9 +160,28 @@ class LoadJobs(ReportSources):
         self.assertIsNone(jobs["bbb"]["deliver"])
         self.assertIsNone(jobs["bbb"]["failureDeliver"])
 
-    def test_nothing_readable_raises(self):
+    def test_missing_file_is_a_profile_without_crons(self):
+        (s.HERMES_HOME / "profiles" / "dubi" / "cron" / "jobs.json").unlink()
+        self.assertEqual([j["id"] for j in s.load_jobs()], ["aaa"])
+
+    def test_broken_existing_file_raises(self):
+        # Skipping it would drop that profile's jobs from the snapshot, and the route deletes them.
+        bad = s.HERMES_HOME / "profiles" / "broken" / "cron"
+        bad.mkdir(parents=True)
+        (bad / "jobs.json").write_text("{not json", encoding="utf-8")
+        with self.assertRaises(ValueError):
+            s.load_jobs()
+
+    def test_wrong_shape_existing_file_raises(self):
+        for raw in ("null", "42", '{"jobs": null}', '"x"'):
+            with self.subTest(raw=raw):
+                (s.HERMES_HOME / "profiles" / "dubi" / "cron" / "jobs.json").write_text(raw, encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    s.load_jobs()
+
+    def test_no_jobs_file_anywhere_raises(self):
         for f in list(s.HERMES_HOME.rglob("jobs.json")):
-            f.write_text("{bad", encoding="utf-8")
+            f.unlink()
         with self.assertRaises(FileNotFoundError):
             s.load_jobs()
 

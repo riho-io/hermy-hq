@@ -181,9 +181,12 @@ def safe_log(rid, args, code):
         pass
 
 
-def run_row(row, secret):
+def run_row(row, secret, succeeded=None):
+    """Returns None, or the exception name when reporting after the claim failed.
+
+    Appends the row id to `succeeded` when its command ran with exit 0 (even if reporting it failed).
+    """
     rid = row.get("id")
-    """Returns None, or the exception name when reporting after the claim failed."""
     if not isinstance(rid, str):
         return None
     try:
@@ -205,6 +208,9 @@ def run_row(row, secret):
         except Exception:  # noqa: BLE001 - best effort only
             pass
         return name
+    finally:
+        if ran and ran[0] == 0 and succeeded is not None:
+            succeeded.append(rid)
 
 
 def _execute(rid, row, secret, ran):
@@ -232,15 +238,31 @@ def _execute(rid, row, secret, ran):
         report(rid, "failed", secret, error=(out or f"exit {proc.returncode}")[:MAX_ERROR])
 
 
+def push_jobs(secret):
+    """Same jobs snapshot as hermy_cron_sync.main(), so the card shows the new state now, not in 5 min."""
+    sync.push(sync.URL, {"source": "argo", "jobs": sync.load_jobs(), "runs": sync.load_runs()}, secret)
+
+
 def process(secret):
     errors = []
+    succeeded = []
     for row in get_requests(secret):
         if isinstance(row, dict):
-            err = run_row(row, secret)
+            err = run_row(row, secret, succeeded)
             if err:
                 errors.append(err)
-    if errors:  # rows were handled best-effort above; surface it so health flips
-        raise RuntimeError(mask(f"{len(errors)} rea tulemuse saatmine ebaõnnestus ({', '.join(sorted(set(errors)))})", secret))
+    problems = []
+    if errors:
+        problems.append(f"{len(errors)} rea tulemuse saatmine ebaõnnestus ({', '.join(sorted(set(errors)))})")
+    if succeeded:
+        try:  # best effort: rows are already reported; a failure here only flips health
+            push_jobs(secret)
+        except urllib.error.HTTPError as e:
+            problems.append(f"cronide sünk HTTP {e.code}")
+        except Exception as e:  # noqa: BLE001
+            problems.append(f"cronide sünk {type(e).__name__}: {str(e)[:200]}")
+    if problems:  # rows were handled best-effort above; surface it so health flips
+        raise RuntimeError(mask("; ".join(problems), secret))
 
 
 def read_state():

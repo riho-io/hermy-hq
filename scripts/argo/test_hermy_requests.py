@@ -26,7 +26,7 @@ class Base(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         home = Path(self.tmp.name)
         self.old = (sync.HERMES_HOME, sync.HERMES, r.TARGET_FILE, r.LOG_FILE, r.STATE_FILE,
-                    r.get_requests, r.report, r.subprocess.run)
+                    r.get_requests, r.report, r.subprocess.run, sync.push, sync.load_runs)
         sync.HERMES_HOME = home / ".hermes"
         sync.HERMES = sync.HERMES_HOME / "cron"
         for d in (sync.HERMES, sync.HERMES_HOME / "profiles" / "dubi" / "cron"):
@@ -52,13 +52,21 @@ class Base(unittest.TestCase):
             self.calls.append((args, kw))
             return subprocess.CompletedProcess(args, 0, *self.proc_out)
 
+        self.jobs_pushes = []
+
+        def fake_push(url, payload, secret):
+            self.jobs_pushes.append((url, payload, secret))
+            return 200
+
         r.get_requests = lambda secret: self.rows
         r.report = fake_report
         r.subprocess.run = fake_run
+        sync.push = fake_push
+        sync.load_runs = lambda: [{"id": 1}]
 
     def tearDown(self):
         (sync.HERMES_HOME, sync.HERMES, r.TARGET_FILE, r.LOG_FILE, r.STATE_FILE,
-         r.get_requests, r.report, r.subprocess.run) = self.old
+         r.get_requests, r.report, r.subprocess.run, sync.push, sync.load_runs) = self.old
         self.tmp.cleanup()
 
     def run_rows(self, *rows):
@@ -228,6 +236,35 @@ class Requests(Base):
             self.run_rows({"id": "a", "kind": "cron.pause", "payload": pay}, {"id": "b", "kind": "cron.pause", "payload": pay})
         self.assertIn("1", str(cm.exception))
         self.assertIn(("b", "done"), [(p["id"], p["status"]) for p in self.posts])
+
+    def test_successful_batch_pushes_jobs_once(self):
+        pay = {"jobId": JOB, "profile": "default"}
+        self.run_rows({"id": "a", "kind": "cron.pause", "payload": pay}, {"id": "b", "kind": "cron.resume", "payload": pay})
+        self.assertEqual(len(self.jobs_pushes), 1)
+        url, payload, secret = self.jobs_pushes[0]
+        self.assertEqual(url, sync.URL)
+        self.assertEqual((payload["source"], payload["runs"], secret), ("argo", [{"id": 1}], "secret"))
+        self.assertEqual([(j["id"], j["profile"]) for j in payload["jobs"]], [(JOB, "default")])
+
+    def test_no_successful_command_no_jobs_push(self):
+        self.run_rows({"id": "a", "kind": "cron.pause", "payload": {"jobId": "000000000000", "profile": "default"}})
+        self.assertEqual(self.jobs_pushes, [])
+        r.subprocess.run = lambda args, **kw: subprocess.CompletedProcess(args, 1, "", "nope")
+        self.run_rows({"id": "b", "kind": "cron.pause", "payload": {"jobId": JOB, "profile": "default"}})
+        self.assertEqual(self.posts[-1]["status"], "failed")
+        self.assertEqual(self.jobs_pushes, [])
+        self.claim_code = 409
+        self.run_rows({"id": "c", "kind": "cron.pause", "payload": {"jobId": JOB, "profile": "default"}})
+        self.assertEqual(self.jobs_pushes, [])
+
+    def test_jobs_push_failure_flips_health_but_rows_stay_done(self):
+        def broken(url, payload, secret):
+            raise urllib.error.HTTPError(url, 500, "x", {}, None)
+        sync.push = broken
+        with self.assertRaises(RuntimeError) as cm:
+            self.run_rows({"id": "a", "kind": "cron.pause", "payload": {"jobId": JOB, "profile": "default"}})
+        self.assertIn("500", str(cm.exception))
+        self.assertEqual([p["status"] for p in self.posts], ["running", "done"])
 
     def test_claim_409_does_not_raise(self):
         self.claim_code = 409

@@ -57,25 +57,28 @@ def _opt_str(v):
 def load_jobs():
     """Jobs of every profile (default first; the first profile wins a duplicate id).
 
-    A broken or half-written jobs.json is skipped like in load_report_sources, but when no
-    profile could be read at all this raises: the route deletes jobs missing from the snapshot,
-    so an empty list from a read failure would wipe the dashboard.
+    The route deletes jobs missing from the snapshot, so this never drops a profile silently:
+    a missing jobs.json means the profile has no crons, but an existing file that cannot be read,
+    parsed or has the wrong shape raises and the whole push is skipped this cycle (the health flip
+    reports it). Unlike load_report_sources, which stays tolerant. No jobs.json anywhere raises too.
     """
     out = []
     seen = set()
     read_any = False
     for d in cron_dirs():
+        path = d / "jobs.json"
         try:
-            data = json.loads((d / "jobs.json").read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+            raw = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
             continue
+        data = json.loads(raw)  # ValueError on a broken or half-written file: let it raise
         jobs = data.get("jobs", []) if isinstance(data, dict) else data
         if isinstance(jobs, dict):
             jobs = list(jobs.values())
-        if not isinstance(jobs, list):
-            continue
-        read_any = True
         profile = "default" if d == HERMES else d.parent.name
+        if not isinstance(jobs, list):
+            raise ValueError(f"jobs.json of profile {profile}: unexpected shape")
+        read_any = True
         for j in jobs:
             jid = j.get("id") if isinstance(j, dict) else None
             if not (isinstance(jid, str) and JOB_ID.match(jid)) or jid in seen:
@@ -99,7 +102,7 @@ def load_jobs():
                 "failureDeliver": _opt_str(j.get("failure_deliver")),
             })
     if not read_any:
-        raise FileNotFoundError("no readable jobs.json in any profile")
+        raise FileNotFoundError("no jobs.json in any profile")
     return out
 
 
