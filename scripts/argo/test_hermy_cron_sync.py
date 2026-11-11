@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 import unittest
@@ -60,9 +61,7 @@ class ExtractBody(unittest.TestCase):
 class CollectReports(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.old = s.HERMES
-        s.HERMES = Path(self.tmp.name)
-        out = s.HERMES / "output" / "abc"
+        out = Path(self.tmp.name) / "output" / "abc"
         out.mkdir(parents=True)
         (out / "2026-10-26_10-05-38.md").write_text(AGENT, encoding="utf-8")
         (out / "2026-10-19_10-02-14.md").write_text(AGENT, encoding="utf-8")
@@ -76,13 +75,13 @@ class CollectReports(unittest.TestCase):
                 os.utime(p, (old, old))
         self.now = old + 3600
         os.utime(self.fresh, (self.now - 5, self.now - 5))
+        self.sources = {"abc": (out, "Radar"), "missing": (Path(self.tmp.name) / "output" / "missing", "Gone")}
 
     def tearDown(self):
-        s.HERMES = self.old
         self.tmp.cleanup()
 
     def test_oldest_first_skips_silent_unknown_and_fresh(self):
-        reports, skipped = s.collect_reports(["abc", "missing"], {"abc": "Radar"}, set(), now=self.now)
+        reports, skipped = s.collect_reports(self.sources, set(), now=self.now)
         self.assertEqual([r["run"] for r in reports], ["2026-10-19_10-02-14", "2026-10-26_10-05-38"])
         self.assertEqual(skipped, ["abc/2026-10-12_10-04-19"])
         self.assertEqual(reports[0]["jobName"], "Radar")
@@ -90,21 +89,56 @@ class CollectReports(unittest.TestCase):
         self.assertRegex(reports[0]["runAt"], r"^2026-10-19T10:02:14[+-]\d\d:\d\d$")
 
     def test_already_sent_is_not_resent(self):
-        reports, _ = s.collect_reports(["abc"], {}, {"abc/2026-10-19_10-02-14"}, now=self.now)
+        reports, _ = s.collect_reports(self.sources, {"abc/2026-10-19_10-02-14"}, now=self.now)
         self.assertEqual([r["run"] for r in reports], ["2026-10-26_10-05-38"])
 
 
-class ReportJobs(unittest.TestCase):
+def _jobs_json(path, jobs):
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "jobs.json").write_text(json.dumps({"jobs": jobs}), encoding="utf-8")
+
+
+class ReportSources(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.old = (s.HERMES_HOME, s.HERMES)
+        s.HERMES_HOME = Path(self.tmp.name)
+        s.HERMES = s.HERMES_HOME / "cron"
+        _jobs_json(s.HERMES, [{"id": "aaa", "name": "Uudised"}, {"id": "bad id", "name": "x"}])
+        _jobs_json(s.HERMES_HOME / "profiles" / "dubi" / "cron", [{"id": "bbb", "name": "Radar"}, {"id": "aaa", "name": "Dup"}])
+        _jobs_json(s.HERMES_HOME / "profiles" / "tark" / "cron", [{"id": "ccc"}])
+        (s.HERMES_HOME / "profiles" / "empty").mkdir(parents=True)  # profile without cron folder
+        bad = s.HERMES_HOME / "profiles" / "broken" / "cron"
+        bad.mkdir(parents=True)
+        (bad / "jobs.json").write_text("{not json", encoding="utf-8")
+
+    def tearDown(self):
+        s.HERMES_HOME, s.HERMES = self.old
+        self.tmp.cleanup()
+
+    def test_all_profiles_first_wins_invalid_dropped(self):
+        src = s.load_report_sources()
+        self.assertEqual(sorted(src), ["aaa", "bbb", "ccc"])
+        self.assertEqual(src["aaa"], (s.HERMES / "output" / "aaa", "Uudised"))
+        self.assertEqual(src["bbb"], (s.HERMES_HOME / "profiles" / "dubi" / "cron" / "output" / "bbb", "Radar"))
+        self.assertEqual(src["ccc"][1], "ccc")  # name falls back to id
+
+    def test_cron_dirs_default_first(self):
+        self.assertEqual(s.cron_dirs()[0], s.HERMES)
+        self.assertNotIn(s.HERMES_HOME / "profiles" / "empty" / "cron", s.cron_dirs())
+
+
+class ReportExclude(unittest.TestCase):
     def test_comments_and_invalid_ids_dropped(self):
         with tempfile.TemporaryDirectory() as d:
-            old = s.REPORT_JOBS_FILE
-            s.REPORT_JOBS_FILE = Path(d) / "report_jobs"
+            old = s.REPORT_EXCLUDE_FILE
+            s.REPORT_EXCLUDE_FILE = Path(d) / "report_exclude"
             try:
-                self.assertEqual(s.load_report_jobs(), [])
-                s.REPORT_JOBS_FILE.write_text("abc  # radar\n\n# off\nbad id\ndef\n", encoding="utf-8")
-                self.assertEqual(s.load_report_jobs(), ["abc", "def"])
+                self.assertEqual(s.load_report_exclude(), set())  # missing file = exclude nothing
+                s.REPORT_EXCLUDE_FILE.write_text("abc  # mustandid\n\n# off\nbad id\ndef\n", encoding="utf-8")
+                self.assertEqual(s.load_report_exclude(), {"abc", "def"})
             finally:
-                s.REPORT_JOBS_FILE = old
+                s.REPORT_EXCLUDE_FILE = old
 
 
 if __name__ == "__main__":

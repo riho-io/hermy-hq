@@ -6,11 +6,11 @@ Runs as a no-agent Hermes cron every 5 min. Reads, never writes, Hermes state:
   ~/.hermes/cron/executions.db   -> runs claimed in the last RUN_WINDOW_H hours
 POSTs to {HERMY_HQ_URL}/api/ingest/hermes-cron with header x-ingest-secret.
 
-Reports: for the jobs listed in ~/.config/hermy-hq/report_jobs (one job id per line, # comments),
-the delivered text of each run in ~/.hermes/cron/output/<job>/<run>.md is POSTed to
-/api/ingest/hermes-report. Agent runs are cut to their "## Response" part (the prompt is never sent),
-[SILENT] runs are skipped. Sent runs are remembered in hermy_report_state.json; a missing
-allowlist file means no reports are sent.
+Reports: the delivered text of every run of every job, in every profile (~/.hermes/cron and
+~/.hermes/profiles/*/cron), is POSTed from <cron>/output/<job>/<run>.md to /api/ingest/hermes-report,
+except jobs listed in ~/.config/hermy-hq/report_exclude (one job id per line, # comments).
+Agent runs are cut to their "## Response" part (the prompt is never sent), [SILENT] runs are skipped.
+Sent runs are remembered in hermy_report_state.json.
 
 Secret: INGEST_SECRET from Doppler hermes/prd, else ~/.config/hermy-hq/ingest_secret (chmod 600).
 Env: HERMY_HQ_URL (optional).
@@ -29,13 +29,14 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-HERMES = Path.home() / ".hermes" / "cron"
+HERMES_HOME = Path.home() / ".hermes"
+HERMES = HERMES_HOME / "cron"
 STATE_FILE = HERMES / "hermy_sync_state.json"
 SECRET_FILE = Path.home() / ".config" / "hermy-hq" / "ingest_secret"
 BASE_URL = os.environ.get("HERMY_HQ_URL", "https://hermy-hq-tau.vercel.app").rstrip("/")
 URL = BASE_URL + "/api/ingest/hermes-cron"
 REPORT_URL = BASE_URL + "/api/ingest/hermes-report"
-REPORT_JOBS_FILE = Path.home() / ".config" / "hermy-hq" / "report_jobs"
+REPORT_EXCLUDE_FILE = Path.home() / ".config" / "hermy-hq" / "report_exclude"
 REPORT_STATE_FILE = HERMES / "hermy_report_state.json"
 RUN_WINDOW_H = 2       # re-send recent runs so running -> completed transitions are picked up
 MAX_RUNS = 500         # must match the route's limit
@@ -125,21 +126,43 @@ def extract_body(text):
     return body[:MAX_REPORT_CHARS]
 
 
-def load_report_jobs():
+def cron_dirs():
+    """Default profile first, then every named profile that has a cron folder."""
+    return [HERMES] + sorted(p for p in (HERMES_HOME / "profiles").glob("*/cron") if p.is_dir())
+
+
+def load_report_sources():
+    """{job_id: (output folder, job name)} across all profiles; the first profile wins a duplicate id."""
+    out = {}
+    for d in cron_dirs():
+        try:
+            data = json.loads((d / "jobs.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue  # a profile without crons, or a half-written file: skip it, never fail the sync
+        jobs = data.get("jobs", []) if isinstance(data, dict) else data
+        if isinstance(jobs, dict):
+            jobs = list(jobs.values())
+        for j in jobs:
+            jid = j.get("id") if isinstance(j, dict) else None
+            if isinstance(jid, str) and JOB_ID.match(jid) and jid not in out:
+                out[jid] = (d / "output" / jid, j.get("name") or jid)
+    return out
+
+
+def load_report_exclude():
     try:
-        raw = REPORT_JOBS_FILE.read_text(encoding="utf-8")
+        raw = REPORT_EXCLUDE_FILE.read_text(encoding="utf-8")
     except OSError:
-        return []
-    ids = [l.split("#", 1)[0].strip() for l in raw.splitlines()]
-    return [i for i in ids if JOB_ID.match(i)]
+        return set()
+    ids = (l.split("#", 1)[0].strip() for l in raw.splitlines())
+    return {i for i in ids if JOB_ID.match(i)}
 
 
-def collect_reports(job_ids, job_names, sent, now=None):
+def collect_reports(sources, sent, now=None):
     """(reports to send, run keys to mark as handled without sending), oldest first, capped per run."""
     now = now or time.time()
     reports, skipped = [], []
-    for job_id in job_ids:
-        folder = HERMES / "output" / job_id
+    for job_id, (folder, name) in sources.items():
         if not folder.is_dir():
             continue
         for path in sorted(folder.glob("*.md")):
@@ -156,7 +179,7 @@ def collect_reports(job_ids, job_names, sent, now=None):
                 "key": key,
                 "jobId": job_id,
                 "run": path.stem,
-                "jobName": job_names.get(job_id, job_id),
+                "jobName": name,
                 "runAt": run_at.isoformat(),
                 "body": body,
             })
@@ -175,12 +198,11 @@ def write_report_state(sent):
     REPORT_STATE_FILE.write_text(json.dumps({"sent": sorted(sent)}), encoding="utf-8")
 
 
-def sync_reports(jobs, secret):
-    job_ids = load_report_jobs()
-    if not job_ids:
-        return 0
+def sync_reports(secret):
+    exclude = load_report_exclude()
+    sources = {k: v for k, v in load_report_sources().items() if k not in exclude}
     sent = read_report_state()
-    reports, skipped = collect_reports(job_ids, {j["id"]: j["name"] for j in jobs}, sent)
+    reports, skipped = collect_reports(sources, sent)
     sent.update(skipped)
     try:
         for i in range(0, len(reports), REPORTS_PER_POST):
@@ -234,7 +256,7 @@ def main():
             raise RuntimeError("INGEST_SECRET puudub")
         jobs = load_jobs()
         push(URL, {"source": "argo", "jobs": jobs, "runs": load_runs()}, secret)
-        sync_reports(jobs, secret)
+        sync_reports(secret)
         ok, detail = True, None
     except urllib.error.HTTPError as e:
         ok, detail = False, f"HTTP {e.code}"
