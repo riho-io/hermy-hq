@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation';
 import { Sidebar } from '@/components/sidebar';
 import { CommandPalette } from '@/components/command-palette';
+import { ArgoHealthBanner } from './argo-health-banner';
 
 export function ConditionalLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -19,6 +20,7 @@ export function ConditionalLayout({ children }: { children: React.ReactNode }) {
       <div className="hq-ambient" aria-hidden />
       <Sidebar />
       <main className="relative flex-1 overflow-auto pt-16 md:pt-0 pb-20 md:pb-0 px-4 sm:px-6 md:px-10 lg:px-12 py-4 md:py-8 page-enter">
+        <ArgoHealthBanner />
         <div className="pb-safe">
           {children}
         </div>
