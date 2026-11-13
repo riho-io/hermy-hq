@@ -25,10 +25,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Invalid payload' }, { status: 400 })
   }
   const checkedAt = new Date(health.checkedAt)
-  await prisma.kontoCheck.upsert({
-    where: { id: 'argo-health' },
-    create: { id: 'argo-health', payload: health, checkedAt },
-    update: { payload: health, checkedAt },
-  })
+  try {
+    await prisma.kontoCheck.upsert({
+      where: { id: 'argo-health' },
+      create: { id: 'argo-health', payload: health, checkedAt },
+      update: { payload: health, checkedAt },
+    })
+  } catch (err) {
+    // Details go to the server log only; the caller gets no DB internals.
+    console.error('ingest/argo-health failed', err instanceof Error ? err.message : err)
+    return NextResponse.json({ error: 'Write failed' }, { status: 500 })
+  }
   return NextResponse.json({ ok: true })
 }
