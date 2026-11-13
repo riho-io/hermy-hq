@@ -165,7 +165,11 @@ def main():
     logged_in = check_nous_login()
     balance = check_nous_balance() if logged_in else None
     bad_now = evaluate(gateway_ok, logged_in, balance)
-    cur, seen, msgs = step(load_state(), bad_now)
+    prev = load_state()
+    if gateway_ok is None and "gateway" in prev[0]:
+        # Teadmata (bus-viga) ei ole taastumine — hoia kinnitatud rike alles.
+        bad_now.add("gateway")
+    cur, seen, msgs = step(prev, bad_now)
     sent = True
     if msgs:
         try:
