@@ -40,7 +40,7 @@ OK_LABEL = {
 
 def evaluate(gateway_ok, nous_logged_in, balance):
     bad = set()
-    if not gateway_ok:
+    if gateway_ok is False:  # None = teadmata (nt bus-viga), pole häire
         bad.add("gateway")
     if not nous_logged_in:
         bad.add("nous_login")
@@ -55,9 +55,26 @@ def transitions(prev, cur):
     return msgs
 
 
+def step(prev, bad_now):
+    """Debounce: häire alles 2. järjestikusel halval jooksul; taastumine kohe.
+
+    prev = (kinnitatud, nähtud eelmisel jooksul). Tagastab (kinnitatud, nähtud, teated).
+    """
+    prev_bad, prev_seen = prev
+    confirmed = {k for k in bad_now if k in prev_seen or k in prev_bad}
+    if "nous_login" in bad_now and "nous_balance" in prev_bad:
+        # Välja logituna on saldo teadmata — ära teata "taastus".
+        confirmed.add("nous_balance")
+    seen = set(bad_now)
+    if "nous_balance" in confirmed:
+        seen.add("nous_balance")
+    return confirmed, seen, transitions(prev_bad, confirmed)
+
+
 def health_payload(gateway_ok, nous_logged_in, balance, now):
+    # zod skeemis on gatewayOk boolean: teadmata (None) loetakse payload'is korras olevaks.
     return {"source": "argo", "checkedAt": now.isoformat(),
-            "gatewayOk": gateway_ok, "nousLoggedIn": nous_logged_in,
+            "gatewayOk": gateway_ok is not False, "nousLoggedIn": nous_logged_in,
             "nousBalance": balance}
 
 
@@ -70,7 +87,12 @@ def _run(cmd, timeout=40):
 
 
 def check_gateway():
-    return _run(["systemctl", "--user", "is-active", "hermes-gateway"]).strip() == "active"
+    if not os.environ.get("XDG_RUNTIME_DIR"):  # cron'is puudub; ilma selleta pole user-bus'i
+        os.environ["XDG_RUNTIME_DIR"] = f"/run/user/{os.getuid()}"
+    out = _run(["systemctl", "--user", "is-active", "hermes-gateway"])
+    if "Failed to connect to bus" in out:
+        return None
+    return out.strip() == "active"
 
 
 def check_nous_login():
@@ -79,23 +101,38 @@ def check_nous_login():
 
 
 def check_nous_balance():
-    sys.path.insert(0, str(HOME / ".hermes" / "scripts"))
+    scripts = str(HOME / ".hermes" / "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
     try:
         from konto_check import nous_balance
-        return nous_balance()[0]
-    except Exception:  # noqa: BLE001 — teadmata saldo pole häire
+        value = nous_balance()[0]
+    except KeyboardInterrupt:
+        raise
+    except BaseException:  # noqa: BLE001 — konto_check võib sys.exit'ida; teadmata saldo pole häire
         return None
+    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 
 
 def load_state():
+    """Tagastab (kinnitatud, nähtud). Vana formaat {"bad": [...]} -> seen = bad."""
     try:
-        return set(json.loads(STATE_FILE.read_text(encoding="utf-8")).get("bad", []))
-    except (OSError, ValueError):
-        return set()
+        data = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return set(), set()
+        bad = set(data.get("bad", []))
+        return bad, set(data.get("seen", bad))
+    except (OSError, ValueError, TypeError):
+        return set(), set()
 
 
-def save_state(bad):
-    STATE_FILE.write_text(json.dumps({"bad": sorted(bad)}), encoding="utf-8")
+def save_state(bad, seen):
+    try:
+        STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        STATE_FILE.write_text(
+            json.dumps({"bad": sorted(bad), "seen": sorted(seen)}), encoding="utf-8")
+    except OSError as e:
+        print(f"olekut ei salvestatud: {type(e).__name__}", file=sys.stderr)
 
 
 def send_telegram(text):
@@ -127,13 +164,17 @@ def main():
     gateway_ok = check_gateway()
     logged_in = check_nous_login()
     balance = check_nous_balance() if logged_in else None
-    cur = evaluate(gateway_ok, logged_in, balance)
-    prev = load_state()
-    msgs = transitions(prev, cur)
+    bad_now = evaluate(gateway_ok, logged_in, balance)
+    cur, seen, msgs = step(load_state(), bad_now)
+    sent = True
     if msgs:
-        # Saatmise rike -> olekut ei salvestata, järgmine jooks proovib uuesti.
-        send_telegram("\n".join(msgs))
-    save_state(cur)
+        try:
+            send_telegram("\n".join(msgs))
+        except Exception as e:  # noqa: BLE001 - token on URL-is, trüki ainult tüüp
+            print(f"telegram ebaõnnestus: {type(e).__name__}", file=sys.stderr)
+            sent = False
+    if sent:  # saatmise rike -> olekut ei salvestata, järgmine jooks proovib uuesti
+        save_state(cur, seen)
     push_health(health_payload(gateway_ok, logged_in, balance, datetime.now(timezone.utc)))
     stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
     print(f"{stamp} bad={sorted(cur)} teateid={len(msgs)}")
