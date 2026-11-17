@@ -160,7 +160,7 @@ class MainTest(unittest.TestCase):
             p.start()
             self.addCleanup(p.stop)
         for name, rv in [("check_gateway", False), ("check_nous_login", True),
-                         ("check_nous_balance", 5.0)]:
+                         ("check_nous_balance", 5.0), ("check_claude_plugin", True)]:
             p = mock.patch.object(k, name, return_value=rv)
             p.start()
             self.addCleanup(p.stop)
@@ -209,3 +209,27 @@ class BalanceTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ClaudePluginTest(unittest.TestCase):
+    def test_claude_down_is_alarm(self):
+        self.assertEqual(k.evaluate(True, True, 12.5, claude_ok=False), {"claude_plugin"})
+
+    def test_claude_unknown_is_not_alarm(self):
+        self.assertEqual(k.evaluate(True, True, 12.5, claude_ok=None), set())
+
+    def test_claude_message_names_fix(self):
+        msgs = k.transitions(set(), {"claude_plugin"})
+        self.assertIn("Claude", msgs[0])
+
+    def test_probe_due(self):
+        now = datetime(2026, 11, 17, 20, 0, tzinfo=timezone.utc)
+        self.assertTrue(k.probe_due(None, now))
+        self.assertFalse(k.probe_due(now.timestamp() - 3600, now))
+        self.assertTrue(k.probe_due(now.timestamp() - 7 * 3600, now))
+
+    def test_classify_probe(self):
+        self.assertTrue(k.classify_probe(0, "ok"))
+        self.assertFalse(k.classify_probe(1, "Invalid authentication credentials"))
+        # Kasutuslimiit pole plugina rike — teadmata, mitte häire.
+        self.assertIsNone(k.classify_probe(1, "5-hour limit reached"))

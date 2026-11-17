@@ -24,22 +24,30 @@ HEALTH_URL = os.environ.get(
     "ARGO_HEALTH_URL", "https://hermy-hq-tau.vercel.app/api/ingest/argo-health")
 CHAT_ID = "8113335732"
 NOUS_BALANCE_MIN = 1.0
+PROBE_FILE = HOME / ".hermes" / "cron" / "argo_claude_probe.json"
+PROBE_EVERY_S = 6 * 3600  # päris päring harva: kulutab tellimuse limiiti
 
 FIX = {
     "gateway": "Hermese gateway ei jookse. Paranda: ssh hermes → "
                "systemctl --user restart hermes-secrets hermes-gateway",
     "nous_login": "Nous on välja logitud. Paranda: ssh hermes → hermes model → Nous",
     "nous_balance": "Nousi saldo on otsas. Täienda: https://portal.nousresearch.com/billing",
+    "claude_plugin": "Claude'i plugin (tark) ei tööta: token puudub/aegunud või Anthropic blokeeris. "
+                     "Kontrolli: ssh hermes → doppler run --project hermes --config prd -- claude auth status; "
+                     "uus token: claude setup-token → Doppler CLAUDE_CODE_OAUTH_TOKEN",
 }
 OK_LABEL = {
     "gateway": "gateway jookseb",
     "nous_login": "Nousi sisselogimine korras",
     "nous_balance": "Nousi saldo korras",
+    "claude_plugin": "Claude'i plugin töötab",
 }
 
 
-def evaluate(gateway_ok, nous_logged_in, balance):
+def evaluate(gateway_ok, nous_logged_in, balance, claude_ok=None):
     bad = set()
+    if claude_ok is False:  # None = teadmata / pole veel proovitud / limiit, pole häire
+        bad.add("claude_plugin")
     if gateway_ok is False:  # None = teadmata (nt bus-viga), pole häire
         bad.add("gateway")
     if not nous_logged_in:
@@ -114,6 +122,64 @@ def check_nous_balance():
     return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 
 
+def probe_due(last_ts, now):
+    return last_ts is None or now.timestamp() - last_ts >= PROBE_EVERY_S
+
+
+def classify_probe(returncode, output):
+    """True = töötab, False = rike, None = teadmata (kasutuslimiit pole plugina rike)."""
+    if returncode == 0:
+        return True
+    if "limit" in output.lower():
+        return None
+    return False
+
+
+def _load_probe():
+    try:
+        d = json.loads(PROBE_FILE.read_text(encoding="utf-8"))
+        return d.get("ts"), d.get("ok")
+    except (OSError, ValueError, AttributeError):
+        return None, None
+
+
+def _save_probe(ts, ok):
+    try:
+        PROBE_FILE.write_text(json.dumps({"ts": ts, "ok": ok}), encoding="utf-8")
+    except OSError as e:
+        print(f"probe'i ei salvestatud: {type(e).__name__}", file=sys.stderr)
+
+
+def check_claude_plugin(now):
+    """Plugin kasutab CLAUDE_CODE_OAUTH_TOKEN-it (doppler run annab selle cronis).
+
+    Odav: `claude auth status` igal jooksul. Päris päring (haiku) iga 6 h tagant;
+    vahepeal kehtib viimane probe'i tulemus.
+    """
+    claude = str(HOME / ".local" / "bin" / "claude")
+    if not os.path.exists(claude):
+        claude = "claude"
+    out = _run([claude, "auth", "status"], timeout=30)
+    if '"loggedIn": false' in out:
+        return False
+    if '"loggedIn": true' not in out:
+        return None
+    last_ts, last_ok = _load_probe()
+    if not probe_due(last_ts, now):
+        return last_ok
+    try:
+        r = subprocess.run([claude, "-p", "Vasta ühe sõnaga: ok", "--model", "haiku"],
+                           capture_output=True, text=True, timeout=120)
+        ok = classify_probe(r.returncode, r.stdout + r.stderr)
+    except subprocess.TimeoutExpired:
+        ok = None
+    except Exception:  # noqa: BLE001
+        ok = None
+    if ok is not None:
+        _save_probe(now.timestamp(), ok)
+    return ok if ok is not None else last_ok
+
+
 def load_state():
     """Tagastab (kinnitatud, nähtud). Vana formaat {"bad": [...]} -> seen = bad."""
     try:
@@ -164,7 +230,8 @@ def main():
     gateway_ok = check_gateway()
     logged_in = check_nous_login()
     balance = check_nous_balance() if logged_in else None
-    bad_now = evaluate(gateway_ok, logged_in, balance)
+    claude_ok = check_claude_plugin(datetime.now(timezone.utc))
+    bad_now = evaluate(gateway_ok, logged_in, balance, claude_ok)
     prev = load_state()
     if gateway_ok is None and "gateway" in prev[0]:
         # Teadmata (bus-viga) ei ole taastumine — hoia kinnitatud rike alles.
