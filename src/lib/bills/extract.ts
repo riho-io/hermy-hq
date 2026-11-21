@@ -15,6 +15,11 @@ const httpsUrl = z
     }
   }, 'https only')
 
+function isRealDate(s: string): boolean {
+  const d = new Date(`${s}T00:00:00Z`)
+  return !Number.isNaN(d.getTime()) && d.toISOString().startsWith(s)
+}
+
 export const ExtractionSchema = z.object({
   isBill: z.boolean(),
   confidence: z.number().min(0).max(1),
@@ -24,7 +29,7 @@ export const ExtractionSchema = z.object({
   dueDate: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .refine((s) => !Number.isNaN(Date.parse(`${s}T00:00:00Z`)), 'invalid date')
+    .refine((s) => isRealDate(s), 'invalid date')
     .nullable(),
   reference: clip(60).nullable(),
   iban: z.string().regex(/^[A-Z]{2}\d{2}[A-Z0-9 ]{8,30}$/).nullable(),
@@ -65,11 +70,13 @@ const SYSTEM = [
   'contractNo (customer or contract number), serviceAddress (the property/service address the bill is about), payUrl (https link to pay or view the bill).',
 ].join(' ')
 
-const cut = (s: string, n: number) => s.replace(/\s+/g, ' ').trim().slice(0, n)
+// strip delimiter tags first so hostile mail cannot close <email>
+const cut = (s: string, n: number) => s.replace(/<\/?email\s*>/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, n)
+const WRAPPER_CHARS = '<email>\nBody: \nPDF: \n</email>'.length
 
 export function buildPrompt(i: { from: string; subject: string; bodyText: string; pdfText: string }): { system: string; user: string } {
   const head = `From: ${cut(i.from, 200)}\nSubject: ${cut(i.subject, 300)}\n`
-  const room = MAX_INPUT_CHARS - head.length
+  const room = MAX_INPUT_CHARS - head.length - WRAPPER_CHARS
   const pdf = cut(i.pdfText, Math.floor(room * 0.6))
   const body = cut(i.bodyText, room - pdf.length)
   const user = `<email>\n${head}Body: ${body}\nPDF: ${pdf}\n</email>`
