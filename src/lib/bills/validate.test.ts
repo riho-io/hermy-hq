@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { ManualBillSchema, BillPatchSchema, GroupSchema, eurosToCents, patchToData } from './validate'
+import { ManualBillSchema, BillPatchSchema, GroupSchema, GroupPatchSchema, eurosToCents, patchToData } from './validate'
 
 test('manual bill: minimal valid input', () => {
   const r = ManualBillSchema.safeParse({ supplier: 'Elektrimüüja', amount: 12.5, dueDate: '2026-12-05' })
@@ -32,6 +32,22 @@ test('patch: untouched fields stay absent from the update', () => {
 })
 test('patch: amount in euros becomes cents', () => {
   assert.equal(patchToData({ id: 'x', amount: 45.2 }).amountCents, 4520)
+})
+test('group patch: omitted keywords stay absent (must not wipe stored keywords)', () => {
+  const p = GroupPatchSchema.parse({ id: 'x', name: 'Uus' })
+  assert.equal('keywords' in p, false)
+})
+test('group: keywords default to []', () => {
+  assert.deepEqual(GroupSchema.parse({ name: 'Kodu' }).keywords, [])
+})
+test('patch: status new clears paidAt', () => {
+  assert.equal(patchToData({ id: 'x', status: 'new' }).paidAt, null)
+})
+test('patch: dueDate null clears the date and re-arms both reminders', () => {
+  const d = patchToData({ id: 'x', dueDate: null })
+  assert.equal(d.dueDate, null)
+  assert.equal(d.remind3SentAt, null)
+  assert.equal(d.remindDueSentAt, null)
 })
 test('group: keywords shorter than 3 chars or too many are rejected', () => {
   assert.equal(GroupSchema.safeParse({ name: 'Kodu', keywords: ['ab'] }).success, false)

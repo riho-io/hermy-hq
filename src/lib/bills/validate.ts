@@ -48,13 +48,15 @@ export const BillPatchSchema = z.strictObject({
 })
 
 const keyword = z.string().trim().min(3).max(40)
-export const GroupSchema = z.strictObject({
+// Shared fields without defaults: a patch must not invent values for omitted fields.
+const groupBase = z.strictObject({
   name: text(80).min(1),
   address: optText(200),
-  keywords: z.array(keyword).max(20).default([]),
+  keywords: z.array(keyword).max(20),
   sortOrder: z.number().int().min(0).max(1000).optional(),
 })
-export const GroupPatchSchema = GroupSchema.partial().extend({ id: z.string().min(1).max(40) })
+export const GroupSchema = groupBase.extend({ keywords: z.array(keyword).max(20).default([]) })
+export const GroupPatchSchema = groupBase.partial().extend({ id: z.string().min(1).max(40) })
 
 export function eurosToCents(v: number | null): number | null {
   return v === null ? null : Math.round(v * 100)

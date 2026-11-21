@@ -1,5 +1,7 @@
 export function tallinnToday(now: Date = new Date()): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Tallinn', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Tallinn', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now)
+  const get = (t: string) => parts.find((p) => p.type === t)!.value
+  return `${get('year')}-${get('month')}-${get('day')}`
 }
 
 export function daysBetween(fromIso: string, toIso: string): number {

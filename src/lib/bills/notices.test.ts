@@ -10,6 +10,15 @@ test('tallinnToday uses Tallinn date, not UTC', () => {
   assert.equal(tallinnToday(new Date('2026-11-21T22:30:00Z')), '2026-11-22') // 00:30 Tallinn
   assert.equal(tallinnToday(new Date('2026-11-21T10:00:00Z')), '2026-11-21')
 })
+test('tallinnToday in summer (EEST, UTC+3)', () => {
+  assert.equal(tallinnToday(new Date('2026-07-01T21:30:00Z')), '2026-07-02')
+})
+test('1 day before: d3 with daysLeft 1', () => {
+  assert.deepEqual(dueNotices([b()], '2026-12-04'), [{ id: 'b1', kind: 'd3', daysLeft: 1 }])
+})
+test('remind3SentAt set but due today still gives due', () => {
+  assert.deepEqual(dueNotices([b({ remind3SentAt: new Date() })], '2026-12-05'), [{ id: 'b1', kind: 'due', daysLeft: 0 }])
+})
 test('daysBetween counts whole days', () => {
   assert.equal(daysBetween('2026-12-02', '2026-12-05'), 3)
   assert.equal(daysBetween('2026-12-05', '2026-12-05'), 0)
