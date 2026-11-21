@@ -1,54 +1,9 @@
 import 'server-only'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
-import type { InboundIo, InboundStore, PdfFile } from './inbound'
-import { isAllowedPdfUrl } from './pdf-url'
+import type { BillIo, InboundStore } from './inbound'
 
-const RESEND = 'https://api.resend.com'
-const MAX_PDF = 5 * 1024 * 1024
-
-async function resendGet(path: string): Promise<any> {
-  const key = process.env.RESEND_API_KEY
-  if (!key) throw new Error('RESEND_API_KEY missing')
-  const res = await fetch(`${RESEND}${path}`, {
-    headers: { Authorization: `Bearer ${key}` },
-    cache: 'no-store',
-    signal: AbortSignal.timeout(15_000),
-  })
-  if (!res.ok) throw new Error(`resend ${res.status}`)
-  return res.json()
-}
-
-export const io: InboundIo = {
-  async fetchEmail(emailId) {
-    const j = await resendGet(`/emails/receiving/${encodeURIComponent(emailId)}`)
-    return { text: typeof j.text === 'string' ? j.text : '', html: typeof j.html === 'string' ? j.html : '' }
-  },
-
-  async fetchPdf(emailId): Promise<PdfFile | null> {
-    const list = await resendGet(`/emails/receiving/${encodeURIComponent(emailId)}/attachments`)
-    const att = (Array.isArray(list.data) ? list.data : []).find(
-      (a: any) => a?.content_type === 'application/pdf' || /\.pdf$/i.test(a?.filename ?? ''),
-    )
-    // Reason codes only: no URLs, filenames or mail content in logs.
-    const skip = (reason: string) => {
-      console.warn('inbound pdf skipped:', reason)
-      return null
-    }
-    if (!att) return null // no PDF attachment is the normal case, not a skip
-    if (typeof att.size !== 'number' || typeof att.download_url !== 'string') return skip('bad_metadata')
-    if (att.size > MAX_PDF) return skip('too_large')
-    // SSRF guard: only fetch from Resend's own https hosts.
-    if (!isAllowedPdfUrl(att.download_url)) return skip('host_not_allowed')
-    const res = await fetch(att.download_url, { cache: 'no-store', signal: AbortSignal.timeout(20_000), redirect: 'error' })
-    if (!res.ok) return skip(`status_${res.status}`)
-    const data = Buffer.from(await res.arrayBuffer())
-    if (data.length === 0) return skip('empty')
-    if (data.length > MAX_PDF) return skip('too_large')
-    if (data.subarray(0, 5).toString('latin1') !== '%PDF-') return skip('not_pdf')
-    return { filename: String(att.filename ?? 'arve.pdf').slice(0, 200), contentType: 'application/pdf', data }
-  },
-
+export const io: BillIo = {
   async pdfToText(data) {
     const { extractText, getDocumentProxy } = await import('unpdf')
     const pdf = await getDocumentProxy(new Uint8Array(data))

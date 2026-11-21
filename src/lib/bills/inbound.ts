@@ -1,11 +1,9 @@
-import { z } from 'zod'
 import { buildPrompt, decideStatus, parseExtraction, toCents } from './extract'
 import { assignGroup, type GroupLite } from './group'
 
 export const DAILY_LLM_CAP = 60
-const SYSTEM_SENDERS = ['forwarding-noreply@google.com', 'noreply@zoho.eu', 'noreply@zoho.com']
 
-export type Outcome = 'ignored_type' | 'ignored_recipient' | 'ignored_system' | 'duplicate' | 'review' | 'new' | 'ignored'
+export type Outcome = 'duplicate' | 'review' | 'new' | 'ignored'
 export type PdfFile = { filename: string; contentType: 'application/pdf'; data: Buffer }
 export type BillUpdate = {
   status: 'new' | 'review' | 'ignored'
@@ -28,26 +26,20 @@ export interface InboundStore {
   groups(): Promise<GroupLite[]>
   extractionsLast24h(): Promise<number>
 }
-export interface InboundIo {
-  fetchEmail(emailId: string): Promise<{ text: string; html: string }>
-  fetchPdf(emailId: string): Promise<PdfFile | null>
+export interface BillIo {
   pdfToText(data: Buffer): Promise<string>
   llm(p: { system: string; user: string }): Promise<string>
 }
-
-const EventSchema = z.object({
-  type: z.string(),
-  data: z.object({
-    email_id: z.string().min(1).max(100),
-    from: z.string().max(500).default(''),
-    to: z.array(z.string().max(500)).max(50).default([]),
-    received_for: z.array(z.string().max(500)).max(50).default([]),
-    subject: z.string().max(1000).default(''),
-  }),
-})
+export type BillInput = {
+  messageKey: string
+  from: string
+  subject: string
+  account: 'gmail' | 'youtb' | 'zoho-isiklik'
+  bodyText: string
+  pdf: PdfFile | null
+}
 
 export const stripNul = (s: string) => s.replace(/\u0000/g, '')
-const addrOf = (s: string) => (/<([^>]+)>/.exec(s)?.[1] ?? s).trim().toLowerCase()
 // Log only the error class (and Prisma-style code): messages can carry query context or mail content.
 const errTag = (err: unknown) => {
   if (!(err instanceof Error)) return 'unknown'
@@ -56,7 +48,7 @@ const errTag = (err: unknown) => {
 }
 
 // Adapter messages matching this are static and carry no mail content; nothing else is logged.
-const STATIC_MSG = /^((resend|deepseek) \d{3}|RESEND_API_KEY missing|DEEPSEEK_API_KEY missing)$/
+const STATIC_MSG = /^(deepseek \d{3}|DEEPSEEK_API_KEY missing)$/
 
 export function stripHtml(html: string): string {
   return html
@@ -70,28 +62,13 @@ export function stripHtml(html: string): string {
     .trim()
 }
 
-export async function processInbound(
-  event: unknown,
-  store: InboundStore,
-  io: InboundIo,
-  cfg: { ownAddress: string | undefined },
-): Promise<Outcome> {
-  const parsed = EventSchema.safeParse(event)
-  if (!parsed.success || parsed.data.type !== 'email.received') return 'ignored_type'
-  const { email_id, from, to, received_for, subject } = parsed.data.data
-
-  // Single-user app: the random inbound address itself is the secret. The own address may appear in
-  // received_for (derived from Received headers, not a trustworthy SMTP envelope; Gmail forwarding may put
-  // only the original address there) or in To, so match the UNION. Sender and headers are trusted for nothing else.
-  // The same Resend domain also serves other apps (kulu), whose mail must not be claimed here.
-  const own = cfg.ownAddress?.trim().toLowerCase()
-  if (!own || ![...received_for, ...to].some((t) => addrOf(t) === own)) {
-    console.warn('inbound ignored: recipient_mismatch')
-    return 'ignored_recipient'
-  }
-  if (SYSTEM_SENDERS.includes(addrOf(from))) return 'ignored_system'
-
-  const id = await store.claim({ emailId: email_id, fromAddr: stripNul(from).slice(0, 200), subject: stripNul(subject).slice(0, 300) })
+export async function processBill(input: BillInput, store: InboundStore, io: BillIo): Promise<Outcome> {
+  const { from, subject, pdf } = input
+  const id = await store.claim({
+    emailId: 'imap:' + input.messageKey,
+    fromAddr: stripNul(from).slice(0, 200),
+    subject: stripNul(subject).slice(0, 300),
+  })
   if (!id) return 'duplicate'
 
   // From here the row exists with status "review": any failure leaves it visible instead of losing the bill.
@@ -99,10 +76,6 @@ export async function processInbound(
   try {
     // Count includes the row just claimed, so >= keeps real LLM calls at most DAILY_LLM_CAP - 1 per 24 h (fail-safe side).
     if ((await store.extractionsLast24h()) >= DAILY_LLM_CAP) return 'review'
-    step = 'fetch_email'
-    const email = await io.fetchEmail(email_id)
-    step = 'fetch_pdf'
-    const pdf = await io.fetchPdf(email_id)
     step = 'pdf_text'
     let pdfText = ''
     if (pdf) {
@@ -112,7 +85,7 @@ export async function processInbound(
         console.warn('inbound pdf text failed', errTag(err))
       }
     }
-    const bodyText = email.text || stripHtml(email.html)
+    const bodyText = input.bodyText
     if (!bodyText && !pdfText) return 'review'
 
     step = 'llm'
