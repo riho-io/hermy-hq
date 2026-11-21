@@ -28,6 +28,7 @@ import {
   Radar,
   ScrollText,
   Timer,
+  Wallet,
 } from "lucide-react";
 
 const navGroups = [
@@ -38,6 +39,7 @@ const navGroups = [
       { href: "/toolaud", label: "Töölaud", icon: Home },
       { href: "/hermes", label: "Hermes", icon: Cpu },
       { href: "/cronid", label: "Cronid", icon: Timer },
+      { href: "/kulu", label: "Kulu ja profiilid", icon: Wallet },
       { href: "/raportid", label: "Raportid", icon: ScrollText },
       { href: "/tasks", label: "Ülesanded", icon: ClipboardList },
       { href: "/reminders", label: "Meeldetuletused", icon: Bell },
