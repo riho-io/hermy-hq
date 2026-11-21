@@ -16,7 +16,14 @@ export async function GET(req: Request) {
   const horizon = new Date(Date.parse(`${today}T00:00:00Z`) + 3 * 86_400_000)
   try {
     const rows = await prisma.bill.findMany({
-      where: { status: { in: ['new', 'review'] }, dueDate: { not: null, lte: horizon } },
+      where: {
+        status: { in: ['new', 'review'] },
+        dueDate: { not: null, lte: horizon },
+        // Already-notified bills stay out of the result (server-side dueNotices stays authoritative).
+        OR: [{ remindDueSentAt: null }, { remind3SentAt: null }],
+      },
+      orderBy: { dueDate: 'asc' },
+      take: 200,
       include: { group: { select: { name: true } } },
     })
     const byId = new Map(rows.map((r) => [r.id, r]))
