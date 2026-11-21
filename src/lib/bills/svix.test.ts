@@ -41,5 +41,33 @@ test('missing secret / header values fail closed', () => {
   assert.equal(verifySvix({ ...base, id: null, signature: good }), false)
   assert.equal(verifySvix({ ...base, timestamp: null, signature: good }), false)
   assert.equal(verifySvix({ ...base, signature: null }), false)
-  assert.equal(verifySvix({ ...base, timestamp: 'abc', signature: good }), false)
+})
+test('malformed timestamps fail on timestamp validation alone (each signed over its own string)', () => {
+  for (const ts of ['abc', '1800000000.5', '0x6B49D200', ' 1800000000', '1.8e9']) {
+    assert.equal(verifySvix({ ...base, timestamp: ts, signature: sign('msg_1', ts, base.body) }), false, ts)
+  }
+})
+test('NaN nowSec fails closed', () => {
+  assert.equal(verifySvix({ ...base, nowSec: NaN, signature: sign('msg_1', NOW, base.body) }), false)
+})
+test('future edge (NOW + 300) passes', () => {
+  const ts = NOW + 300
+  assert.equal(verifySvix({ ...base, timestamp: String(ts), signature: sign('msg_1', ts, base.body) }), true)
+})
+test('valid signature under a v2 prefix is rejected', () => {
+  const sig = sign('msg_1', NOW, base.body).replace(/^v1,/, 'v2,')
+  assert.equal(verifySvix({ ...base, signature: sig }), false)
+})
+test('Svix public documented test vector', () => {
+  assert.equal(
+    verifySvix({
+      secret: 'whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw',
+      id: 'msg_p5jXN8AQM9LWM0D4loKWxJek',
+      timestamp: '1614265330',
+      signature: 'v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE=',
+      body: '{"test": 2432232314}',
+      nowSec: 1614265330,
+    }),
+    true,
+  )
 })

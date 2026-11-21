@@ -17,9 +17,10 @@ export function verifySvix(o: {
 }): boolean {
   const { secret, id, timestamp, signature, body } = o
   if (!secret || !id || !timestamp || !signature) return false
+  if (!/^\d{1,12}$/.test(timestamp)) return false
   const ts = Number(timestamp)
   const now = o.nowSec ?? Math.floor(Date.now() / 1000)
-  if (!Number.isInteger(ts) || Math.abs(now - ts) > SVIX_TOLERANCE_SEC) return false
+  if (!(Math.abs(now - ts) <= SVIX_TOLERANCE_SEC)) return false
   const key = Buffer.from(secret.startsWith('whsec_') ? secret.slice(6) : secret, 'base64')
   if (key.length === 0) return false
   const expected = createHmac('sha256', key).update(`${id}.${timestamp}.${body}`).digest()
