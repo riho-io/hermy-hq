@@ -42,11 +42,6 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Resend webhook authenticates via Svix signature in the route itself (POST only)
-  if (pathname === '/api/inbound/resend' && request.method === 'POST') {
-    return NextResponse.next();
-  }
-
   // Argo pulls the bills to notify about; exactly this path, x-ingest-secret checked in the route
   if (pathname === '/api/ingest/bills-due' && request.method === 'GET') {
     return NextResponse.next();
