@@ -750,8 +750,8 @@ model Bill {
   updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
   file            BillFile?
 
-  @@index([status, dueDate])
-  @@index([groupId])
+  @@index([status, dueDate], map: "bill_status_due_idx")
+  @@index([groupId], map: "bill_group_idx")
   @@map("bill")
   @@schema("hermyhq")
 }
