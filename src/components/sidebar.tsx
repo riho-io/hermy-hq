@@ -29,6 +29,7 @@ import {
   ScrollText,
   Timer,
   Wallet,
+  Receipt,
 } from "lucide-react";
 
 const navGroups = [
@@ -43,6 +44,7 @@ const navGroups = [
       { href: "/raportid", label: "Raportid", icon: ScrollText },
       { href: "/tasks", label: "Ülesanded", icon: ClipboardList },
       { href: "/reminders", label: "Meeldetuletused", icon: Bell },
+      { href: "/arved", label: "Arved", icon: Receipt },
     ],
   },
   {

@@ -68,3 +68,16 @@ test('logged-in user still reaches pages and APIs without the header', async () 
   assert.ok(passed(await proxy(req('/api/reminders', { method: 'POST', cookie }))));
   assert.ok(passed(await proxy(req('/api/cache/clear', { method: 'POST', cookie }))));
 });
+
+test('bills: webhook POST passes, GET does not; bills-due GET passes; other ingest GET stays 401', async () => {
+  assert.ok(passed(await proxy(req('/api/inbound/resend', { method: 'POST' }))));
+  assert.equal((await proxy(req('/api/inbound/resend'))).status, 401);
+  assert.ok(passed(await proxy(req('/api/ingest/bills-due'))));
+  assert.equal((await proxy(req('/api/ingest/argo-health'))).status, 401);
+});
+
+test('bills API needs a session', async () => {
+  assert.equal((await proxy(req('/api/bills'))).status, 401);
+  assert.equal((await proxy(req('/api/bill-groups'))).status, 401);
+  assert.equal((await proxy(req('/api/bills/file?id=x'))).status, 401);
+});

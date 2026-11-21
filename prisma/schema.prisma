@@ -709,3 +709,61 @@ model AgentProfile {
   @@map("agent_profile")
   @@schema("hermyhq")
 }
+
+model BillGroup {
+  id        String   @id @default(cuid())
+  name      String
+  address   String?
+  keywords  String[] @default([])
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  bills     Bill[]
+
+  @@map("bill_group")
+  @@schema("hermyhq")
+}
+
+model Bill {
+  id              String     @id @default(cuid())
+  groupId         String?    @map("group_id")
+  group           BillGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  source          String
+  status          String
+  supplier        String?
+  amountCents     Int?       @map("amount_cents")
+  currency        String     @default("EUR")
+  dueDate         DateTime?  @map("due_date") @db.Date
+  reference       String?
+  iban            String?
+  contractNo      String?    @map("contract_no")
+  serviceAddress  String?    @map("service_address")
+  payUrl          String?    @map("pay_url")
+  notes           String?
+  emailId         String?    @unique @map("email_id")
+  fromAddr        String?    @map("from_addr")
+  subject         String?
+  ignoreReason    String?    @map("ignore_reason")
+  paidAt          DateTime?  @map("paid_at") @db.Timestamptz(6)
+  remind3SentAt   DateTime?  @map("remind3_sent_at") @db.Timestamptz(6)
+  remindDueSentAt DateTime?  @map("remind_due_sent_at") @db.Timestamptz(6)
+  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  file            BillFile?
+
+  @@index([status, dueDate], map: "bill_status_due_idx")
+  @@index([groupId], map: "bill_group_idx")
+  @@map("bill")
+  @@schema("hermyhq")
+}
+
+model BillFile {
+  billId      String @id @map("bill_id")
+  bill        Bill   @relation(fields: [billId], references: [id], onDelete: Cascade)
+  filename    String
+  contentType String @map("content_type")
+  size        Int
+  data        Bytes
+
+  @@map("bill_file")
+  @@schema("hermyhq")
+}
