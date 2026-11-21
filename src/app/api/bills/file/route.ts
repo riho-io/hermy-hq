@@ -14,9 +14,10 @@ export async function GET(req: NextRequest) {
   return new NextResponse(new Uint8Array(f.data), {
     headers: {
       'Content-Type': 'application/pdf',
-      'Content-Disposition': 'inline; filename="arve.pdf"',
+      // Untrusted (comes from a forwarded email): download, never render inline in our origin.
+      'Content-Disposition': 'attachment; filename="arve.pdf"',
       'X-Content-Type-Options': 'nosniff',
-      'Content-Security-Policy': "default-src 'none'",
+      'Content-Security-Policy': "sandbox; default-src 'none'",
       'Cache-Control': 'private, no-store',
     },
   })
