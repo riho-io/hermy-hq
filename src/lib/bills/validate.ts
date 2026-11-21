@@ -80,3 +80,14 @@ export function patchToData(p: z.infer<typeof BillPatchSchema>, now: Date = new 
   }
   return d
 }
+
+/** Drops fields the client resent unchanged, so they neither re-arm reminders nor rewrite paidAt. */
+export function dropUnchanged(
+  p: z.infer<typeof BillPatchSchema>,
+  existing: { dueDate: string | null; status: string },
+): z.infer<typeof BillPatchSchema> {
+  const out = { ...p }
+  if (out.dueDate !== undefined && out.dueDate === existing.dueDate) delete out.dueDate
+  if (out.status !== undefined && out.status === existing.status) delete out.status
+  return out
+}

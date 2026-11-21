@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { ManualBillSchema, BillPatchSchema, GroupSchema, GroupPatchSchema, eurosToCents, patchToData } from './validate'
+import { ManualBillSchema, BillPatchSchema, GroupSchema, GroupPatchSchema, eurosToCents, patchToData, dropUnchanged } from './validate'
 
 test('manual bill: minimal valid input', () => {
   const r = ManualBillSchema.safeParse({ supplier: 'Elektrimüüja', amount: 12.5, dueDate: '2026-12-05' })
@@ -53,4 +53,19 @@ test('group: keywords shorter than 3 chars or too many are rejected', () => {
   assert.equal(GroupSchema.safeParse({ name: 'Kodu', keywords: ['ab'] }).success, false)
   assert.equal(GroupSchema.safeParse({ name: 'Kodu', keywords: Array(21).fill('abcd') }).success, false)
   assert.equal(GroupSchema.safeParse({ name: 'Kodu', address: 'Näidise 5', keywords: ['Näidise 5'] }).success, true)
+})
+test('dropUnchanged: same dueDate and same status are removed (no re-arm, paidAt kept)', () => {
+  const existing = { dueDate: '2026-12-05', status: 'paid' }
+  const p = dropUnchanged({ id: 'x', dueDate: '2026-12-05', status: 'paid', notes: 'a' }, existing)
+  assert.deepEqual(p, { id: 'x', notes: 'a' })
+  assert.deepEqual(patchToData(p), { notes: 'a' })
+})
+test('dropUnchanged: changed values and null stay', () => {
+  assert.deepEqual(dropUnchanged({ id: 'x', dueDate: '2026-12-06', status: 'paid' }, { dueDate: '2026-12-05', status: 'new' }), {
+    id: 'x', dueDate: '2026-12-06', status: 'paid',
+  })
+  assert.deepEqual(dropUnchanged({ id: 'x', dueDate: null }, { dueDate: '2026-12-05', status: 'new' }), { id: 'x', dueDate: null })
+})
+test('dropUnchanged: clearing an already empty dueDate is a no-op', () => {
+  assert.deepEqual(dropUnchanged({ id: 'x', dueDate: null }, { dueDate: null, status: 'new' }), { id: 'x' })
 })
