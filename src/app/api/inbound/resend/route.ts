@@ -33,7 +33,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, outcome })
   } catch (err) {
     // Only reachable when the claim itself failed (DB down): 500 makes Resend retry.
-    console.error('inbound/resend failed', err instanceof Error ? err.message : 'unknown')
+    // Name/code only: Prisma messages can contain query context.
+    const code = err instanceof Error ? (err as { code?: unknown }).code : undefined
+    console.error('inbound/resend failed', err instanceof Error ? err.name : 'unknown', typeof code === 'string' ? code : '')
     return NextResponse.json({ error: 'Failed' }, { status: 500 })
   }
 }

@@ -41,11 +41,18 @@ const EventSchema = z.object({
     email_id: z.string().min(1).max(100),
     from: z.string().max(500).default(''),
     to: z.array(z.string().max(500)).max(50).default([]),
+    received_for: z.array(z.string().max(500)).max(50).default([]),
     subject: z.string().max(1000).default(''),
   }),
 })
 
 const addrOf = (s: string) => (/<([^>]+)>/.exec(s)?.[1] ?? s).trim().toLowerCase()
+// Log only the error class (and Prisma-style code): messages can carry query context or mail content.
+const errTag = (err: unknown) => {
+  if (!(err instanceof Error)) return 'unknown'
+  const code = (err as { code?: unknown }).code
+  return typeof code === 'string' ? `${err.name} ${code}` : err.name
+}
 
 export function stripHtml(html: string): string {
   return html
@@ -67,11 +74,14 @@ export async function processInbound(
 ): Promise<Outcome> {
   const parsed = EventSchema.safeParse(event)
   if (!parsed.success || parsed.data.type !== 'email.received') return 'ignored_type'
-  const { email_id, from, to, subject } = parsed.data.data
+  const { email_id, from, to, received_for, subject } = parsed.data.data
 
-  // Identify by recipient (the sender is forgeable). The same Resend domain also serves other apps (kulu).
+  // Identify by the ENVELOPE recipient (received_for): the sender and the To header are forgeable, and
+  // Gmail/Zoho forwarding keeps the original To. Header To is only a fallback when Resend sends no envelope.
+  // The same Resend domain also serves other apps (kulu).
   const own = cfg.ownAddress?.trim().toLowerCase()
-  if (!own || !to.some((t) => addrOf(t) === own)) return 'ignored_recipient'
+  const recipients = received_for.length > 0 ? received_for : to
+  if (!own || !recipients.some((t) => addrOf(t) === own)) return 'ignored_recipient'
   if (SYSTEM_SENDERS.includes(addrOf(from))) return 'ignored_system'
 
   const id = await store.claim({ emailId: email_id, fromAddr: from.slice(0, 200), subject: subject.slice(0, 300) })
@@ -92,6 +102,24 @@ export async function processInbound(
     if (!e) return 'review'
 
     const decision = decideStatus(e)
+    if (decision.status === 'ignored') {
+      // Not a bill: keep only the verdict, none of the extracted personal data.
+      await store.update(id, {
+        status: 'ignored',
+        supplier: null,
+        amountCents: null,
+        currency: 'EUR',
+        dueDate: null,
+        reference: null,
+        iban: null,
+        contractNo: null,
+        serviceAddress: null,
+        payUrl: null,
+        groupId: null,
+        ignoreReason: decision.reason,
+      })
+      return 'ignored'
+    }
     const groupId = assignGroup([e.serviceAddress, e.supplier, e.contractNo, subject], await store.groups())
     await store.update(id, {
       status: decision.status,
@@ -107,10 +135,17 @@ export async function processInbound(
       groupId,
       ignoreReason: decision.reason,
     })
-    if (pdf && decision.status !== 'ignored') await store.saveFile(id, pdf)
+    if (pdf) {
+      // The bill row is already saved; a failed PDF write must not turn it back into "review".
+      try {
+        await store.saveFile(id, pdf)
+      } catch (err) {
+        console.error('inbound pdf save failed', errTag(err))
+      }
+    }
     return decision.status
   } catch (err) {
-    console.error('inbound bill failed', err instanceof Error ? err.message : 'unknown')
+    console.error('inbound bill failed', errTag(err))
     return 'review'
   }
 }

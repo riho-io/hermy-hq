@@ -2,6 +2,7 @@ import 'server-only'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import type { InboundIo, InboundStore, PdfFile } from './inbound'
+import { isAllowedPdfUrl } from './pdf-url'
 
 const RESEND = 'https://api.resend.com'
 const MAX_PDF = 5 * 1024 * 1024
@@ -29,14 +30,22 @@ export const io: InboundIo = {
     const att = (Array.isArray(list.data) ? list.data : []).find(
       (a: any) => a?.content_type === 'application/pdf' || /\.pdf$/i.test(a?.filename ?? ''),
     )
-    if (!att || typeof att.size !== 'number' || att.size > MAX_PDF || typeof att.download_url !== 'string') return null
+    // Reason codes only: no URLs, filenames or mail content in logs.
+    const skip = (reason: string) => {
+      console.warn('inbound pdf skipped:', reason)
+      return null
+    }
+    if (!att) return null // no PDF attachment is the normal case, not a skip
+    if (typeof att.size !== 'number' || typeof att.download_url !== 'string') return skip('bad_metadata')
+    if (att.size > MAX_PDF) return skip('too_large')
     // SSRF guard: only fetch from Resend's own https hosts.
-    const u = new URL(att.download_url)
-    if (u.protocol !== 'https:' || !(u.hostname === 'resend.com' || u.hostname.endsWith('.resend.com'))) return null
-    const res = await fetch(u, { cache: 'no-store', signal: AbortSignal.timeout(20_000), redirect: 'error' })
-    if (!res.ok) return null
+    if (!isAllowedPdfUrl(att.download_url)) return skip('host_not_allowed')
+    const res = await fetch(att.download_url, { cache: 'no-store', signal: AbortSignal.timeout(20_000), redirect: 'error' })
+    if (!res.ok) return skip(`status_${res.status}`)
     const data = Buffer.from(await res.arrayBuffer())
-    if (data.length === 0 || data.length > MAX_PDF || data.subarray(0, 5).toString('latin1') !== '%PDF-') return null
+    if (data.length === 0) return skip('empty')
+    if (data.length > MAX_PDF) return skip('too_large')
+    if (data.subarray(0, 5).toString('latin1') !== '%PDF-') return skip('not_pdf')
     return { filename: String(att.filename ?? 'arve.pdf').slice(0, 200), contentType: 'application/pdf', data }
   },
 
