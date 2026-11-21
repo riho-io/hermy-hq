@@ -20,22 +20,27 @@ function isRealDate(s: string): boolean {
   return !Number.isNaN(d.getTime()) && d.toISOString().startsWith(s)
 }
 
+// Optional field: an invalid or empty value becomes null instead of discarding the whole extraction.
+const lenient = <T extends z.ZodType>(t: T) =>
+  z.preprocess((v) => (v === '' ? null : v), t.nullable()).catch(null) as unknown as z.ZodType<z.output<T> | null>
+
 export const ExtractionSchema = z.object({
   isBill: z.boolean(),
   confidence: z.number().min(0).max(1),
   supplier: clip(120).nullable(),
   amount: z.number().min(0).max(1_000_000).nullable(),
-  currency: z.string().regex(/^[A-Z]{3}$/).nullable(),
-  dueDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .refine((s) => isRealDate(s), 'invalid date')
-    .nullable(),
+  currency: lenient(z.string().regex(/^[A-Z]{3}$/)),
+  dueDate: lenient(
+    z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .refine((s) => isRealDate(s), 'invalid date'),
+  ),
   reference: clip(60).nullable(),
-  iban: z.string().regex(/^[A-Z]{2}\d{2}[A-Z0-9 ]{8,30}$/).nullable(),
+  iban: lenient(z.string().regex(/^[A-Z]{2}\d{2}[A-Z0-9 ]{8,30}$/)),
   contractNo: clip(60).nullable(),
   serviceAddress: clip(200).nullable(),
-  payUrl: httpsUrl.nullable(),
+  payUrl: lenient(httpsUrl),
 })
 export type Extraction = z.infer<typeof ExtractionSchema>
 

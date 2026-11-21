@@ -17,13 +17,26 @@ test('parses a valid object, also inside a code fence', () => {
 test('garbage, wrong types and missing keys give null', () => {
   assert.equal(parseExtraction('not json'), null)
   assert.equal(parseExtraction(JSON.stringify({ ...good, amount: '45' })), null)
-  assert.equal(parseExtraction(JSON.stringify({ ...good, dueDate: '2026-13-45' })), null)
   assert.equal(parseExtraction(JSON.stringify({ isBill: true })), null)
 })
-test('dueDate must be a real calendar date', () => {
-  assert.equal(parseExtraction(JSON.stringify({ ...good, dueDate: '2026-02-31' })), null)
-  assert.equal(parseExtraction(JSON.stringify({ ...good, dueDate: '2026-13-45' })), null)
+test('invalid dueDate becomes null (never a Date) and decideStatus gives review', () => {
+  for (const d of ['2026-02-31', '2026-13-45', '05.12.2026']) {
+    const e = parseExtraction(JSON.stringify({ ...good, dueDate: d }))
+    assert.ok(e)
+    assert.equal(e.dueDate, null)
+    assert.equal(decideStatus(e).status, 'review')
+  }
   assert.equal(parseExtraction(JSON.stringify({ ...good, dueDate: '2026-12-05' }))?.dueDate, '2026-12-05')
+})
+test('invalid currency becomes null', () => {
+  assert.equal(parseExtraction(JSON.stringify({ ...good, currency: 'eur' }))?.currency, null)
+})
+test('empty-string iban keeps the rest of the extraction', () => {
+  const e = parseExtraction(JSON.stringify({ ...good, iban: '' }))
+  assert.ok(e)
+  assert.equal(e.iban, null)
+  assert.equal(e.supplier, good.supplier)
+  assert.equal(e.amount, good.amount)
 })
 test('unknown keys are dropped', () => {
   const e = parseExtraction(JSON.stringify({ ...good, extra: 'x', status: 'paid' }))
@@ -31,9 +44,13 @@ test('unknown keys are dropped', () => {
   assert.equal('extra' in e, false)
   assert.equal('status' in e, false)
 })
-test('http or javascript payUrl is rejected', () => {
-  assert.equal(parseExtraction(JSON.stringify({ ...good, payUrl: 'http://x.example/p' })), null)
-  assert.equal(parseExtraction(JSON.stringify({ ...good, payUrl: 'javascript:alert(1)' })), null)
+test('http, javascript or empty payUrl becomes null, extraction survives', () => {
+  for (const u of ['http://x.example/p', 'javascript:alert(1)', '']) {
+    const e = parseExtraction(JSON.stringify({ ...good, payUrl: u }))
+    assert.ok(e)
+    assert.equal(e.payUrl, null)
+    assert.equal(e.amount, good.amount)
+  }
 })
 test('overlong strings are clipped, not trusted', () => {
   const e = parseExtraction(JSON.stringify({ ...good, supplier: 'x'.repeat(500) }))

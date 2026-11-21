@@ -26,7 +26,8 @@ export async function POST(req: Request) {
   let marked = 0
   try {
     for (const a of parsed.data.ack) {
-      // Precondition in the WHERE: a second ack (or a bill whose deadline was edited in between) marks nothing.
+      // Precondition in the WHERE: a second ack marks nothing. An ack for a bill whose deadline was edited between read and ack still
+      // marks it as sent; the window is seconds once a day, accepted.
       const r =
         a.kind === 'd3'
           ? await prisma.bill.updateMany({ where: { id: a.id, remind3SentAt: null }, data: { remind3SentAt: now } })

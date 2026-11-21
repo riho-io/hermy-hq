@@ -22,6 +22,13 @@ export async function POST(req: Request) {
   })
   if (!ok) return NextResponse.json({ error: 'Bad signature' }, { status: 400 })
 
+  const ownAddress = process.env.BILLS_INBOUND_ADDRESS
+  if (!ownAddress?.trim()) {
+    // 500 so Resend retries and the misconfiguration is visible (after the signature check: no oracle for strangers).
+    console.error('inbound: BILLS_INBOUND_ADDRESS not set')
+    return NextResponse.json({ error: 'Not configured' }, { status: 500 })
+  }
+
   let json: unknown
   try {
     json = JSON.parse(body)
@@ -29,7 +36,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Bad JSON' }, { status: 400 })
   }
   try {
-    const outcome = await processInbound(json, store, io, { ownAddress: process.env.BILLS_INBOUND_ADDRESS })
+    const outcome = await processInbound(json, store, io, { ownAddress })
     return NextResponse.json({ ok: true, outcome })
   } catch (err) {
     // Only reachable when the claim itself failed (DB down): 500 makes Resend retry.

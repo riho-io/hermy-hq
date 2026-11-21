@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
       'Content-Type': 'application/pdf',
       'Content-Disposition': 'inline; filename="arve.pdf"',
       'X-Content-Type-Options': 'nosniff',
-      'Content-Security-Policy': "sandbox; default-src 'none'",
+      'Content-Security-Policy': "default-src 'none'",
       'Cache-Control': 'private, no-store',
     },
   })

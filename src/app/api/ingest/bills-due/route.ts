@@ -13,14 +13,18 @@ const eur = (c: number | null, cur: string) =>
 export async function GET(req: Request) {
   if (!hasIngestSecret(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const today = tallinnToday()
+  const todayDate = new Date(`${today}T00:00:00Z`)
   const horizon = new Date(Date.parse(`${today}T00:00:00Z`) + 3 * 86_400_000)
   try {
     const rows = await prisma.bill.findMany({
       where: {
         status: { in: ['new', 'review'] },
-        dueDate: { not: null, lte: horizon },
-        // Already-notified bills stay out of the result (server-side dueNotices stays authoritative).
-        OR: [{ remindDueSentAt: null }, { remind3SentAt: null }],
+        // Only bills that can still produce a notice: due/overdue without the due-day message, or within 3 days without the d3 one.
+        // Server-side dueNotices stays authoritative.
+        OR: [
+          { dueDate: { lte: todayDate }, remindDueSentAt: null },
+          { dueDate: { gt: todayDate, lte: horizon }, remind3SentAt: null },
+        ],
       },
       orderBy: { dueDate: 'asc' },
       take: 200,

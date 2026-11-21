@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { processInbound, DAILY_LLM_CAP, type InboundStore, type InboundIo, type BillUpdate } from './inbound'
+import { processInbound, stripNul, DAILY_LLM_CAP, type InboundStore, type InboundIo, type BillUpdate } from './inbound'
 
 const OWN = 'arved-abc123@inbound.example.test'
 const ev = (over: Record<string, unknown> = {}) => ({
@@ -12,7 +12,7 @@ const goodJson = JSON.stringify({
   reference: null, iban: null, contractNo: null, serviceAddress: 'Näidise 5, Jõhvi', payUrl: null,
 })
 
-function harness(over: { llm?: () => Promise<string>; used?: number; claimed?: boolean; pdf?: boolean; saveFileThrows?: boolean } = {}) {
+function harness(over: { llm?: () => Promise<string>; used?: number; claimed?: boolean; pdf?: boolean; pdfText?: string; saveFileThrows?: boolean } = {}) {
   const rows: { id: string; update?: BillUpdate; file?: boolean } = { id: 'bill_1' }
   const log: string[] = []
   const store: InboundStore = {
@@ -32,7 +32,7 @@ function harness(over: { llm?: () => Promise<string>; used?: number; claimed?: b
       log.push('fetchPdf')
       return over.pdf ? { filename: 'arve.pdf', contentType: 'application/pdf', data: Buffer.from('%PDF-1.4 x') } : null
     },
-    pdfToText: async () => { log.push('pdfToText'); return 'PDF tekst' },
+    pdfToText: async () => { log.push('pdfToText'); return over.pdfText ?? 'PDF tekst' },
     llm: async () => { log.push('llm'); return over.llm ? over.llm() : goodJson },
   }
   return { rows, store, io, log, calls: () => log.filter((c) => c === 'llm').length }
@@ -61,9 +61,14 @@ test('recipient in "Name <addr>" form and different case still matches', async (
   const out = await processInbound(ev({ to: [`Arved <${OWN.toUpperCase()}>`] }), h.store, h.io, cfg)
   assert.equal(out, 'new')
 })
-test('forwarded mail: envelope received_for has own address, To header is the original -> processed', async () => {
+test('received_for has own address, To is another -> processed', async () => {
   const h = harness()
   const out = await processInbound(ev({ received_for: [OWN], to: ['someone-else@x.test'] }), h.store, h.io, cfg)
+  assert.equal(out, 'new')
+})
+test('To has own address, received_for is another -> processed (documented union)', async () => {
+  const h = harness()
+  const out = await processInbound(ev({ received_for: ['other@inbound.example.test'], to: [OWN] }), h.store, h.io, cfg)
   assert.equal(out, 'new')
 })
 test('received_for in "Name <addr>" form and different case still matches', async () => {
@@ -71,19 +76,19 @@ test('received_for in "Name <addr>" form and different case still matches', asyn
   const out = await processInbound(ev({ received_for: [`Arved <${OWN.toUpperCase()}>`], to: [] }), h.store, h.io, cfg)
   assert.equal(out, 'new')
 })
-test('forged To header: envelope is another recipient -> ignored_recipient, no claim', async () => {
+test('neither received_for nor To contains own address -> ignored_recipient, no claim, warn without addresses', async () => {
   const h = harness()
-  const out = await processInbound(ev({ received_for: ['other@inbound.example.test'], to: [OWN] }), h.store, h.io, cfg)
-  assert.equal(out, 'ignored_recipient')
+  const warns: unknown[][] = []
+  const orig = console.warn
+  console.warn = (...a: unknown[]) => { warns.push(a) }
+  try {
+    const out = await processInbound(ev({ received_for: ['other@inbound.example.test'], to: ['x@y.test'] }), h.store, h.io, cfg)
+    assert.equal(out, 'ignored_recipient')
+  } finally {
+    console.warn = orig
+  }
   assert.ok(!h.log.includes('claim'))
-})
-test('no received_for: falls back to To header', async () => {
-  const h = harness()
-  assert.equal(await processInbound(ev({ to: [OWN] }), h.store, h.io, cfg), 'new')
-})
-test('empty received_for: falls back to To header', async () => {
-  const h = harness()
-  assert.equal(await processInbound(ev({ received_for: [], to: [OWN] }), h.store, h.io, cfg), 'new')
+  assert.deepEqual(warns, [['inbound ignored: recipient_mismatch']])
 })
 test('Gmail/Zoho confirmation mail is ignored without LLM and without claim', async () => {
   const h = harness()
@@ -175,4 +180,68 @@ test('an injected instruction in the email cannot change the schema of the resul
   assert.equal(out, 'new')
   assert.equal((h.rows.update as unknown as Record<string, unknown>).role, undefined)
   assert.equal(h.rows.update?.status, 'new')
+})
+
+test('pdf present but unreadable (empty text) and LLM says not a bill -> review, PDF saved', async () => {
+  const h = harness({ pdf: true, pdfText: '', llm: async () => JSON.stringify({ ...JSON.parse(goodJson), isBill: false }) })
+  assert.equal(await processInbound(ev(), h.store, h.io, cfg), 'review')
+  assert.equal(h.rows.update?.status, 'review')
+  assert.equal(h.rows.file, true)
+})
+test('pdf with text and LLM says not a bill -> ignored, no file', async () => {
+  const h = harness({ pdf: true, pdfText: 'Päris tekst', llm: async () => JSON.stringify({ ...JSON.parse(goodJson), isBill: false }) })
+  assert.equal(await processInbound(ev(), h.store, h.io, cfg), 'ignored')
+  assert.equal(h.rows.file, undefined)
+})
+test('pdfToText throwing is logged and does not crash', async () => {
+  const h = harness({ pdf: true })
+  h.io.pdfToText = async () => { throw new TypeError('x') }
+  const warns: unknown[][] = []
+  const orig = console.warn
+  console.warn = (...a: unknown[]) => { warns.push(a) }
+  try {
+    await processInbound(ev(), h.store, h.io, cfg)
+  } finally {
+    console.warn = orig
+  }
+  assert.deepEqual(warns, [['inbound pdf text failed', 'TypeError']])
+})
+test('catch-all log names the failing step', async () => {
+  const h = harness({ llm: async () => { throw new Error('deepseek 503') } })
+  const errs: unknown[][] = []
+  const orig = console.error
+  console.error = (...a: unknown[]) => { errs.push(a) }
+  try {
+    assert.equal(await processInbound(ev(), h.store, h.io, cfg), 'review')
+  } finally {
+    console.error = orig
+  }
+  const line = errs.map((a) => a.join(' ')).join('\n')
+  assert.match(line, /inbound bill failed step=llm/)
+  assert.match(line, /deepseek 503/)
+})
+test('catch-all log never includes non-static messages', async () => {
+  const h = harness({ llm: async () => { throw new Error('secret mail content') } })
+  const errs: unknown[][] = []
+  const orig = console.error
+  console.error = (...a: unknown[]) => { errs.push(a) }
+  try {
+    await processInbound(ev(), h.store, h.io, cfg)
+  } finally {
+    console.error = orig
+  }
+  const line = errs.map((a) => a.join(' ')).join('\n')
+  assert.match(line, /step=llm/)
+  assert.doesNotMatch(line, /secret/)
+})
+test('stripNul removes NUL characters', () => {
+  assert.equal(stripNul('a\u0000b\u0000'), 'ab')
+})
+test('claim receives NUL-free fromAddr and subject', async () => {
+  const h = harness()
+  let got: { fromAddr: string; subject: string } | undefined
+  h.store.claim = async (m) => { got = m; return 'bill_1' }
+  await processInbound(ev({ from: 'a\u0000b <noreply@naide.example>', subject: 'x\u0000y' }), h.store, h.io, cfg)
+  assert.ok(got)
+  assert.ok(!got.fromAddr.includes('\u0000') && !got.subject.includes('\u0000'))
 })
