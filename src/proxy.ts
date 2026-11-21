@@ -42,6 +42,16 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Resend webhook authenticates via Svix signature in the route itself (POST only)
+  if (pathname === '/api/inbound/resend' && request.method === 'POST') {
+    return NextResponse.next();
+  }
+
+  // Argo pulls the bills to notify about; exactly this path, x-ingest-secret checked in the route
+  if (pathname === '/api/ingest/bills-due' && request.method === 'GET') {
+    return NextResponse.next();
+  }
+
   // x-internal-secret opens exactly one door: the Argo reminder script (hermy_reminders_tg.py) reads reminders.
   // Checked 16.10: no other VPS caller sends this header. Pages and every other API need a session.
   if (pathname === '/api/reminders' && request.method === 'GET' && hasInternalSecret(request)) {

@@ -35,6 +35,7 @@
     "react-dom": "19.2.3",
     "recharts": "^3.7.0",
     "server-only": "^0.0.1",
+    "unpdf": "^2.2.1",
     "zod": "^4.6.5"
   },
   "devDependencies": {
