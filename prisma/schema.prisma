@@ -665,3 +665,47 @@ model WikiSnapshot {
   @@map("wiki_snapshot")
   @@schema("hermyhq")
 }
+
+// /kulu: Hermes usage per profile per day (Europe/Tallinn, by session start). hermy_usage_sync.py
+// recomputes the last 35 days hourly and the route upserts them, so a re-push is idempotent.
+model AgentUsageDay {
+  source               String   @default("argo")
+  profile              String // Hermes profile id ("default" = Argo)
+  day                  DateTime @db.Date
+  sessions             Int
+  emptySessions        Int      @map("empty_sessions") // no tokens at all; cost nothing
+  unpricedSessions     Int      @map("unpriced_sessions") // tokens without Hermes pricing → cost underestimated
+  subscriptionSessions Int      @map("subscription_sessions") // claude-subscription-*: not paid API
+  inputTokens          BigInt   @map("input_tokens")
+  outputTokens         BigInt   @map("output_tokens")
+  cacheReadTokens      BigInt   @map("cache_read_tokens")
+  cacheWriteTokens     BigInt   @map("cache_write_tokens")
+  costUsd              Float?   @map("cost_usd") // known paid cost; null = nothing priced that day
+  subscriptionCostUsd  Float?   @map("subscription_cost_usd") // notional estimate, not billed
+  models               Json // [{ model, sessions, tokens, costUsd, subscription }]
+  platforms            Json // { cron: n, telegram: n, ... }
+  syncedAt             DateTime @default(now()) @map("synced_at")
+
+  @@id([source, profile, day])
+  @@index([day])
+  @@map("agent_usage_day")
+  @@schema("hermyhq")
+}
+
+// /kulu: current state of each Hermes profile, replaced on every usage sync.
+model AgentProfile {
+  source       String   @default("argo")
+  profile      String
+  displayName  String?  @map("display_name")
+  model        String?
+  provider     String?
+  subscription Boolean  @default(false)
+  gateway      String? // running | stopped | ...; null = `hermes profile list` gave no answer
+  cronCount    Int      @map("cron_count")
+  cronEnabled  Int      @map("cron_enabled")
+  syncedAt     DateTime @default(now()) @map("synced_at")
+
+  @@id([source, profile])
+  @@map("agent_profile")
+  @@schema("hermyhq")
+}
