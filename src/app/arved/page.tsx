@@ -112,13 +112,13 @@ export default function ArvedPage() {
     }),
   ];
 
-  const renderRow = (b: Bill) => {
+  const renderRow = (b: Bill, tint: string) => {
     const u = urgency(b);
     const paid = b.status === "paid";
     const host = b.payUrl ? payHost(b.payUrl) : null;
     const name = b.supplier ?? b.subject ?? "(nimeta)";
     return (
-      <div key={b.id} className={`${ROW_GRID} py-3 border-t border-[var(--line)] first:border-t-0 transition-colors hover:bg-[var(--surface-2)] ${paid ? "opacity-[0.55]" : ""}`}>
+      <div key={b.id} style={{ "--tint": tint } as React.CSSProperties} className={`${ROW_GRID} py-3 border-t border-[var(--line)] first:border-t-0 transition-colors hover:bg-[color-mix(in_srgb,var(--tint)_6%,transparent)] ${paid ? "opacity-[0.55]" : ""}`}>
         <div className="min-w-0">
           <div className="text-[14px] text-[var(--text)]">{b.supplier ?? b.subject ?? "(nimeta)"}</div>
           <div className="text-[12px] text-[var(--text-3)]">
@@ -190,20 +190,20 @@ export default function ArvedPage() {
       )}
 
       {review.length > 0 && (
-        <div id="plokk-review" className="scroll-mt-24 mb-6"><Panel className="p-5 sm:p-6" style={{ boxShadow: "inset 3px 0 0 var(--warn)" }}>
-          <div className="flex items-center gap-2 mb-2 text-[var(--text)]">
+        <div id="plokk-review" className="scroll-mt-24 mb-6"><Panel className="p-5 sm:p-6" style={{ boxShadow: "inset 4px 0 0 var(--warn)", borderColor: "color-mix(in srgb, var(--warn) 28%, var(--line))" }}>
+          <div className="flex items-center gap-2 mb-3 -mx-5 -mt-5 sm:-mx-6 sm:-mt-6 px-5 sm:px-6 py-3.5 rounded-t-[calc(var(--r-lg)-1px)] border-b" style={{ background: "color-mix(in srgb, var(--warn) 12%, transparent)", borderBottomColor: "color-mix(in srgb, var(--warn) 35%, transparent)" }}>
             <AlertTriangle className="w-4 h-4 text-[var(--warn)]" />
-            <h2 className="text-[20px] font-semibold">Vaata üle ({review.length})</h2>
+            <h2 className="text-[20px] font-semibold text-[var(--warn)]">Vaata üle ({review.length})</h2>
           </div>
           <p className="text-[12.5px] text-[var(--text-3)] mb-3 pb-3 border-b border-[var(--line)]">Summa või tähtaeg puudub või lugemine ebaõnnestus. Parandamiseks kustuta ja lisa käsitsi, või jäta; tähtajaga ridadele tuleb meeldetuletus ka siin.</p>
           <RowHead />
-          {review.map(renderRow)}
+          {review.map((b) => renderRow(b, "var(--warn)"))}
         </Panel></div>
       )}
 
       <nav aria-label="Plokkide ülevaade" className="mb-6 flex flex-wrap gap-2">
         {overview.map((o) => (
-          <a key={o.id} href={`#plokk-${o.id}`} className="flex items-center gap-2.5 rounded-[var(--r-lg)] border border-[var(--line)] bg-[var(--surface-1)] px-3.5 py-2 transition-colors hover:bg-[var(--surface-2)] hover:border-[var(--line-strong)]">
+          <a key={o.id} href={`#plokk-${o.id}`} style={{ background: `color-mix(in srgb, ${o.color} 14%, transparent)`, borderColor: `color-mix(in srgb, ${o.color} 40%, transparent)` }} className="flex items-center gap-2.5 rounded-[var(--r-lg)] border px-3.5 py-2 transition-[filter] hover:brightness-110">
             <span aria-hidden className="w-2 h-2 rounded-full" style={{ background: o.color }} />
             <span className="text-[13px] font-medium text-[var(--text)]">{o.name}</span>
             <span className="num text-[12px] text-[var(--text-3)]">{o.sum === null ? o.count : `${o.count} · ${money(o.sum, "EUR")}`}</span>
@@ -229,14 +229,14 @@ export default function ArvedPage() {
           const color = group ? GROUP_COLORS[i % GROUP_COLORS.length] : "var(--text-3)";
           return (
             <div key={key} id={`plokk-${key}`} className="scroll-mt-24">
-              <Panel className="p-5 sm:p-6" style={{ boxShadow: `inset 3px 0 0 ${color}` }}>
-                <div className="flex flex-wrap items-start justify-between gap-3 pb-4 mb-2 border-b border-[var(--line)]">
+              <Panel className="p-5 sm:p-6" style={{ boxShadow: `inset 4px 0 0 ${color}`, borderColor: `color-mix(in srgb, ${color} 28%, var(--line))` }}>
+                <div className="flex flex-wrap items-start justify-between gap-3 -mx-5 -mt-5 sm:-mx-6 sm:-mt-6 px-5 sm:px-6 py-4 mb-2 rounded-t-[calc(var(--r-lg)-1px)] border-b" style={{ background: `color-mix(in srgb, ${color} 12%, transparent)`, borderBottomColor: `color-mix(in srgb, ${color} 35%, transparent)` }}>
                   <div className="min-w-0">
-                    <h2 className="text-[20px] font-semibold text-[var(--text)]">{group ? group.name : "Sorteerimata"}</h2>
+                    <h2 className="text-[20px] font-semibold" style={{ color: group ? color : "var(--text-2)" }}>{group ? group.name : "Sorteerimata"}</h2>
                     {group?.address && <div className="text-[12.5px] text-[var(--text-3)] mt-0.5">{group.address}</div>}
                   </div>
                   <div className="flex flex-col items-end gap-1">
-                    <div className="num text-[13px] text-[var(--text-2)]">{ol.text} · {money(sum, "EUR")}</div>
+                    <div className="num text-[13px] text-[var(--text)]">{ol.text} · <span style={{ color }}>{money(sum, "EUR")}</span></div>
                     {group && (
                       <button type="button" aria-label={`Kustuta plokk: ${group.name}`} className="text-[12px] text-[var(--text-3)] underline"
                         onClick={() => { if (window.confirm(`Kustutada plokk "${group.name}"? Arved jäävad alles (Sorteerimata).`)) act(() => call("DELETE", `/api/bill-groups?id=${encodeURIComponent(group.id)}`)); }}>
@@ -248,7 +248,7 @@ export default function ArvedPage() {
                 {items.length === 0 ? <EmptyState title="Arveid ei ole" className="!py-6" /> : (
                   <>
                     <RowHead />
-                    {items.map(renderRow)}
+                    {items.map((b) => renderRow(b, color))}
                   </>
                 )}
               </Panel>
