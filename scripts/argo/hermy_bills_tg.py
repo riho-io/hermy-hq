@@ -49,9 +49,22 @@ def get_secret():
         return None
 
 
+def doppler_secret(name):
+    """18.09 T1: TELEGRAM_BOT_TOKEN elab Doppleris, mitte .env-is. Väärtust ei logita."""
+    import subprocess
+    try:
+        out = subprocess.run(["/usr/bin/doppler", "secrets", "get", name, "--plain"],
+                             capture_output=True, timeout=30, check=True).stdout.decode().strip()
+        return out or None
+    except Exception:
+        return None
+
+
 def telegram_cfg():
     env = load_env(HERMES_ENV)
-    return env.get("TELEGRAM_BOT_TOKEN"), env.get("TELEGRAM_HOME_CHANNEL")
+    token = os.environ.get("TELEGRAM_BOT_TOKEN") or env.get("TELEGRAM_BOT_TOKEN") or doppler_secret("TELEGRAM_BOT_TOKEN")
+    chat = os.environ.get("TELEGRAM_HOME_CHANNEL") or env.get("TELEGRAM_HOME_CHANNEL")
+    return token, chat
 
 
 def _req(method, path, secret, body=None):
