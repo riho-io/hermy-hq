@@ -39,6 +39,23 @@ function urgency(b: Bill): { label: string; tone: "neutral" | "warn" | "down" } 
   return { label: `${n} p`, tone: "neutral" };
 }
 
+// 0 overdue, 1 due today, 2 due later, 3 no due date, 4 paid/other. Overdue/today only for open bills.
+function billRank(b: Bill, todayIso: string): number {
+  if (b.status === "paid" || b.status === "ignored") return 4;
+  if (!b.dueDate) return 3;
+  const n = days(todayIso, b.dueDate);
+  return n < 0 ? 0 : n === 0 ? 1 : 2;
+}
+const isOverdue = (b: Bill, todayIso: string) => billRank(b, todayIso) === 0;
+
+function sortBills(bills: Bill[], todayIso: string): Bill[] {
+  return [...bills].sort((a, b) => {
+    const r = billRank(a, todayIso) - billRank(b, todayIso);
+    if (r !== 0) return r;
+    return (a.dueDate ?? "").localeCompare(b.dueDate ?? "");
+  });
+}
+
 const ROW_GRID = "grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 items-center px-2 sm:grid-cols-[minmax(0,1fr)_170px_110px_280px] sm:gap-x-4";
 const GROUP_COLORS = ["var(--accent)", "var(--up)", "var(--text-2)"];
 
@@ -89,13 +106,14 @@ export default function ArvedPage() {
     load();
   };
 
-  const review = bills.filter((b) => b.status === "review");
+  const todayIso = today();
+  const review = sortBills(bills.filter((b) => b.status === "review"), todayIso);
   const blocks = useMemo(() => {
     const list = bills.filter((b) => b.status !== "review" && b.status !== "ignored" && (showPaid || b.status !== "paid"));
-    const byGroup = (id: string | null) => list.filter((b) => b.groupId === id);
+    const byGroup = (id: string | null) => sortBills(list.filter((b) => b.groupId === id), todayIso);
     return [...groups.map((g) => ({ key: g.id, group: g as Group | null, items: byGroup(g.id) })),
             { key: "none", group: null as Group | null, items: byGroup(null) }];
-  }, [bills, groups, showPaid]);
+  }, [bills, groups, showPaid, todayIso]);
   const ignored = bills.filter((b) => b.status === "ignored");
   const openLabel = (list: Bill[]) => {
     const nw = list.filter((b) => b.status === "new");
@@ -105,10 +123,10 @@ export default function ArvedPage() {
   };
 
   const overview = [
-    ...(review.length > 0 ? [{ id: "review", name: "Vaata üle", color: "var(--warn)", count: review.length, sum: null as number | null }] : []),
+    ...(review.length > 0 ? [{ id: "review", name: "Vaata üle", color: "var(--warn)", count: review.length, sum: null as number | null, late: review.filter((b) => isOverdue(b, todayIso)).length }] : []),
     ...blocks.filter((bl) => bl.group || bl.items.length > 0 || groups.length === 0).map((bl, i) => {
       const ol = openLabel(bl.items);
-      return { id: bl.key, name: bl.group ? bl.group.name : "Sorteerimata", color: bl.group ? GROUP_COLORS[i % GROUP_COLORS.length] : "var(--text-3)", count: ol.eur.length, sum: ol.eur.reduce((s, b) => s + (b.amountCents ?? 0), 0) as number | null };
+      return { id: bl.key, name: bl.group ? bl.group.name : "Sorteerimata", color: bl.group ? GROUP_COLORS[i % GROUP_COLORS.length] : "var(--text-3)", count: ol.eur.length, sum: ol.eur.reduce((s, b) => s + (b.amountCents ?? 0), 0) as number | null, late: bl.items.filter((b) => isOverdue(b, todayIso)).length };
     }),
   ];
 
@@ -117,11 +135,15 @@ export default function ArvedPage() {
     const paid = b.status === "paid";
     const host = b.payUrl ? payHost(b.payUrl) : null;
     const name = b.supplier ?? b.subject ?? "(nimeta)";
+    const rank = billRank(b, todayIso);
+    const rowEdge = rank === 0 ? "var(--down)" : rank === 1 ? "var(--warn)" : null;
+    const rowBg = rank === 0 ? "color-mix(in srgb, var(--down) 12%, transparent)" : rank === 1 ? "color-mix(in srgb, var(--warn) 10%, transparent)" : "transparent";
+    const rowHover = rank === 0 ? "color-mix(in srgb, var(--down) 20%, transparent)" : rank === 1 ? "color-mix(in srgb, var(--warn) 18%, transparent)" : `color-mix(in srgb, ${tint} 6%, transparent)`;
     return (
-      <div key={b.id} style={{ "--tint": tint } as React.CSSProperties} className={`${ROW_GRID} py-3 border-t border-[var(--line)] first:border-t-0 transition-colors hover:bg-[color-mix(in_srgb,var(--tint)_6%,transparent)] ${paid ? "opacity-[0.55]" : ""}`}>
+      <div key={b.id} style={{ "--row": rowBg, "--row-h": rowHover, ...(rowEdge ? { boxShadow: `inset 3px 0 0 ${rowEdge}` } : {}) } as React.CSSProperties} className={`${ROW_GRID} py-3 border-t border-[var(--line-strong)] first:border-t-0 transition-colors bg-[var(--row)] hover:bg-[var(--row-h)] ${paid ? "opacity-[0.55]" : ""}`}>
         <div className="min-w-0">
           <div className="text-[14px] text-[var(--text)]">{b.supplier ?? b.subject ?? "(nimeta)"}</div>
-          <div className="text-[12px] text-[var(--text-3)]">
+          <div className="text-[12px] text-[var(--text-2)]">
             {[b.reference && `viide ${b.reference}`, b.iban, b.source === "manual" && "käsitsi"].filter(Boolean).join(" · ")}
           </div>
         </div>
@@ -129,7 +151,7 @@ export default function ArvedPage() {
           <span className="text-[12.5px] text-[var(--text-2)]">{fmtDate(b.dueDate)}</span>
           <Pill tone={u.tone}>{u.label}</Pill>
         </div>
-        <div className={`num text-[14px] text-[var(--text)] text-right col-start-2 row-start-1 sm:col-start-3 sm:row-start-auto ${paid ? "line-through" : ""}`}>{money(b.amountCents, b.currency)}</div>
+        <div className={`num text-[14px] ${rank === 0 ? "text-[var(--down)] font-medium" : "text-[var(--text)]"} text-right col-start-2 row-start-1 sm:col-start-3 sm:row-start-auto ${paid ? "line-through" : ""}`}>{money(b.amountCents, b.currency)}</div>
         <div className="col-span-2 row-start-3 sm:col-span-1 sm:col-start-4 sm:row-start-auto flex flex-wrap items-center justify-end gap-1.5">
         <select
           aria-label={`Plokk: ${name}`}
@@ -190,12 +212,12 @@ export default function ArvedPage() {
       )}
 
       {review.length > 0 && (
-        <div id="plokk-review" className="scroll-mt-24 mb-6"><Panel className="p-5 sm:p-6" style={{ boxShadow: "inset 4px 0 0 var(--warn)", borderColor: "color-mix(in srgb, var(--warn) 28%, var(--line))" }}>
-          <div className="flex items-center gap-2 mb-3 -mx-5 -mt-5 sm:-mx-6 sm:-mt-6 px-5 sm:px-6 py-3.5 rounded-t-[calc(var(--r-lg)-1px)] border-b" style={{ background: "color-mix(in srgb, var(--warn) 12%, transparent)", borderBottomColor: "color-mix(in srgb, var(--warn) 35%, transparent)" }}>
+        <div id="plokk-review" className="scroll-mt-24 mb-6"><Panel className="p-5 sm:p-6" style={{ background: "var(--surface-2)", boxShadow: "inset 4px 0 0 var(--warn)", borderColor: "color-mix(in srgb, var(--warn) 35%, var(--line-strong))" }}>
+          <div className="flex items-center gap-2 mb-3 -mx-5 -mt-5 sm:-mx-6 sm:-mt-6 px-5 sm:px-6 py-3.5 rounded-t-[calc(var(--r-lg)-1px)] border-b" style={{ background: "color-mix(in srgb, var(--warn) 18%, transparent)", borderBottomColor: "color-mix(in srgb, var(--warn) 35%, transparent)" }}>
             <AlertTriangle className="w-4 h-4 text-[var(--warn)]" />
             <h2 className="text-[20px] font-semibold text-[var(--warn)]">Vaata üle ({review.length})</h2>
           </div>
-          <p className="text-[12.5px] text-[var(--text-3)] mb-3 pb-3 border-b border-[var(--line)]">Summa või tähtaeg puudub või lugemine ebaõnnestus. Parandamiseks kustuta ja lisa käsitsi, või jäta; tähtajaga ridadele tuleb meeldetuletus ka siin.</p>
+          <p className="text-[12.5px] text-[var(--text-3)] mb-3 pb-3 border-b border-[var(--line-strong)]">Summa või tähtaeg puudub või lugemine ebaõnnestus. Parandamiseks kustuta ja lisa käsitsi, või jäta; tähtajaga ridadele tuleb meeldetuletus ka siin.</p>
           <RowHead />
           {review.map((b) => renderRow(b, "var(--warn)"))}
         </Panel></div>
@@ -207,6 +229,7 @@ export default function ArvedPage() {
             <span aria-hidden className="w-2 h-2 rounded-full" style={{ background: o.color }} />
             <span className="text-[13px] font-medium text-[var(--text)]">{o.name}</span>
             <span className="num text-[12px] text-[var(--text-3)]">{o.sum === null ? o.count : `${o.count} · ${money(o.sum, "EUR")}`}</span>
+            {o.late > 0 && <Pill tone="down">{o.late} hilinenud</Pill>}
           </a>
         ))}
       </nav>
@@ -225,18 +248,22 @@ export default function ArvedPage() {
         {blocks.map(({ key, group, items }, i) => {
           if (!group && items.length === 0 && groups.length > 0) return null;
           const ol = openLabel(items);
+          const late = items.filter((b) => isOverdue(b, todayIso)).length;
           const sum = ol.eur.reduce((s, b) => s + (b.amountCents ?? 0), 0);
           const color = group ? GROUP_COLORS[i % GROUP_COLORS.length] : "var(--text-3)";
           return (
             <div key={key} id={`plokk-${key}`} className="scroll-mt-24">
-              <Panel className="p-5 sm:p-6" style={{ boxShadow: `inset 4px 0 0 ${color}`, borderColor: `color-mix(in srgb, ${color} 28%, var(--line))` }}>
-                <div className="flex flex-wrap items-start justify-between gap-3 -mx-5 -mt-5 sm:-mx-6 sm:-mt-6 px-5 sm:px-6 py-4 mb-2 rounded-t-[calc(var(--r-lg)-1px)] border-b" style={{ background: `color-mix(in srgb, ${color} 12%, transparent)`, borderBottomColor: `color-mix(in srgb, ${color} 35%, transparent)` }}>
+              <Panel className="p-5 sm:p-6" style={{ background: "var(--surface-2)", boxShadow: `inset 4px 0 0 ${color}`, borderColor: `color-mix(in srgb, ${color} 35%, var(--line-strong))` }}>
+                <div className="flex flex-wrap items-start justify-between gap-3 -mx-5 -mt-5 sm:-mx-6 sm:-mt-6 px-5 sm:px-6 py-4 mb-2 rounded-t-[calc(var(--r-lg)-1px)] border-b" style={{ background: `color-mix(in srgb, ${color} 18%, transparent)`, borderBottomColor: `color-mix(in srgb, ${color} 35%, transparent)` }}>
                   <div className="min-w-0">
                     <h2 className="text-[20px] font-semibold" style={{ color: group ? color : "var(--text-2)" }}>{group ? group.name : "Sorteerimata"}</h2>
                     {group?.address && <div className="text-[12.5px] text-[var(--text-3)] mt-0.5">{group.address}</div>}
                   </div>
                   <div className="flex flex-col items-end gap-1">
-                    <div className="num text-[13px] text-[var(--text)]">{ol.text} · <span style={{ color }}>{money(sum, "EUR")}</span></div>
+                    <div className="num text-[13px] text-[var(--text)] flex flex-wrap items-center justify-end gap-2">
+                      {late > 0 && <Pill tone="down">{late} hilinenud</Pill>}
+                      <span>{ol.text} · <span style={{ color }}>{money(sum, "EUR")}</span></span>
+                    </div>
                     {group && (
                       <button type="button" aria-label={`Kustuta plokk: ${group.name}`} className="text-[12px] text-[var(--text-3)] underline"
                         onClick={() => { if (window.confirm(`Kustutada plokk "${group.name}"? Arved jäävad alles (Sorteerimata).`)) act(() => call("DELETE", `/api/bill-groups?id=${encodeURIComponent(group.id)}`)); }}>
