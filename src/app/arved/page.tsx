@@ -39,6 +39,20 @@ function urgency(b: Bill): { label: string; tone: "neutral" | "warn" | "down" } 
   return { label: `${n} p`, tone: "neutral" };
 }
 
+const ROW_GRID = "grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 items-center px-2 sm:grid-cols-[minmax(0,1fr)_170px_110px_280px] sm:gap-x-4";
+const GROUP_COLORS = ["var(--accent)", "var(--up)", "var(--text-2)"];
+
+function RowHead() {
+  return (
+    <div className="hidden sm:grid grid-cols-[minmax(0,1fr)_170px_110px_280px] gap-x-4 px-2 pb-2 text-[10.5px] uppercase tracking-[0.08em] text-[var(--text-4)]">
+      <span>Väljastaja</span>
+      <span>Tähtaeg</span>
+      <span className="text-right">Summa</span>
+      <span aria-hidden />
+    </div>
+  );
+}
+
 async function call(method: string, url: string, body?: unknown) {
   const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `Viga ${res.status}`);
@@ -90,21 +104,33 @@ export default function ArvedPage() {
     return { eur, text: `${eur.length} maksmata${other > 0 ? ` + ${other} muus vääringus` : ""}` };
   };
 
+  const overview = [
+    ...(review.length > 0 ? [{ id: "review", name: "Vaata üle", color: "var(--warn)", count: review.length, sum: null as number | null }] : []),
+    ...blocks.filter((bl) => bl.group || bl.items.length > 0 || groups.length === 0).map((bl, i) => {
+      const ol = openLabel(bl.items);
+      return { id: bl.key, name: bl.group ? bl.group.name : "Sorteerimata", color: bl.group ? GROUP_COLORS[i % GROUP_COLORS.length] : "var(--text-3)", count: ol.eur.length, sum: ol.eur.reduce((s, b) => s + (b.amountCents ?? 0), 0) as number | null };
+    }),
+  ];
+
   const renderRow = (b: Bill) => {
     const u = urgency(b);
+    const paid = b.status === "paid";
     const host = b.payUrl ? payHost(b.payUrl) : null;
     const name = b.supplier ?? b.subject ?? "(nimeta)";
     return (
-      <div key={b.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2.5 border-t border-[var(--line)] first:border-t-0">
-        <div className="min-w-[180px] flex-1">
+      <div key={b.id} className={`${ROW_GRID} py-3 border-t border-[var(--line)] first:border-t-0 transition-colors hover:bg-[var(--surface-2)] ${paid ? "opacity-[0.55]" : ""}`}>
+        <div className="min-w-0">
           <div className="text-[14px] text-[var(--text)]">{b.supplier ?? b.subject ?? "(nimeta)"}</div>
           <div className="text-[12px] text-[var(--text-3)]">
             {[b.reference && `viide ${b.reference}`, b.iban, b.source === "manual" && "käsitsi"].filter(Boolean).join(" · ")}
           </div>
         </div>
-        <div className="num text-[14px] text-[var(--text)]">{money(b.amountCents, b.currency)}</div>
-        <div className="text-[12.5px] text-[var(--text-2)] w-[92px]">{fmtDate(b.dueDate)}</div>
-        <Pill tone={u.tone}>{u.label}</Pill>
+        <div className="flex items-center gap-2 sm:col-start-2 sm:row-start-auto row-start-2">
+          <span className="text-[12.5px] text-[var(--text-2)]">{fmtDate(b.dueDate)}</span>
+          <Pill tone={u.tone}>{u.label}</Pill>
+        </div>
+        <div className={`num text-[14px] text-[var(--text)] text-right col-start-2 row-start-1 sm:col-start-3 sm:row-start-auto ${paid ? "line-through" : ""}`}>{money(b.amountCents, b.currency)}</div>
+        <div className="col-span-2 row-start-3 sm:col-span-1 sm:col-start-4 sm:row-start-auto flex flex-wrap items-center justify-end gap-1.5">
         <select
           aria-label={`Plokk: ${name}`}
           value={b.groupId ?? ""}
@@ -136,6 +162,7 @@ export default function ArvedPage() {
           onClick={() => { if (window.confirm(`Kustutada arve "${b.supplier ?? b.subject ?? ""}"?`)) act(() => call("DELETE", `/api/bills?id=${encodeURIComponent(b.id)}`)); }}>
           <Trash2 className="w-4 h-4" />
         </button>
+        </div>
       </div>
     );
   };
@@ -163,15 +190,26 @@ export default function ArvedPage() {
       )}
 
       {review.length > 0 && (
-        <Panel>
+        <div id="plokk-review" className="scroll-mt-24 mb-6"><Panel className="p-5 sm:p-6" style={{ boxShadow: "inset 3px 0 0 var(--warn)" }}>
           <div className="flex items-center gap-2 mb-2 text-[var(--text)]">
             <AlertTriangle className="w-4 h-4 text-[var(--warn)]" />
-            <h2 className="text-[16px] font-semibold">Vaata üle ({review.length})</h2>
+            <h2 className="text-[20px] font-semibold">Vaata üle ({review.length})</h2>
           </div>
-          <p className="text-[12.5px] text-[var(--text-3)] mb-2">Summa või tähtaeg puudub või lugemine ebaõnnestus. Parandamiseks kustuta ja lisa käsitsi, või jäta; tähtajaga ridadele tuleb meeldetuletus ka siin.</p>
+          <p className="text-[12.5px] text-[var(--text-3)] mb-3 pb-3 border-b border-[var(--line)]">Summa või tähtaeg puudub või lugemine ebaõnnestus. Parandamiseks kustuta ja lisa käsitsi, või jäta; tähtajaga ridadele tuleb meeldetuletus ka siin.</p>
+          <RowHead />
           {review.map(renderRow)}
-        </Panel>
+        </Panel></div>
       )}
+
+      <nav aria-label="Plokkide ülevaade" className="mb-6 flex flex-wrap gap-2">
+        {overview.map((o) => (
+          <a key={o.id} href={`#plokk-${o.id}`} className="flex items-center gap-2.5 rounded-[var(--r-lg)] border border-[var(--line)] bg-[var(--surface-1)] px-3.5 py-2 transition-colors hover:bg-[var(--surface-2)] hover:border-[var(--line-strong)]">
+            <span aria-hidden className="w-2 h-2 rounded-full" style={{ background: o.color }} />
+            <span className="text-[13px] font-medium text-[var(--text)]">{o.name}</span>
+            <span className="num text-[12px] text-[var(--text-3)]">{o.sum === null ? o.count : `${o.count} · ${money(o.sum, "EUR")}`}</span>
+          </a>
+        ))}
+      </nav>
 
       <div className="mt-6 flex items-center gap-3">
         <button type="button" onClick={() => setShowPaid((v) => !v)} className="text-[12.5px] text-[var(--text-3)] underline">
@@ -181,35 +219,46 @@ export default function ArvedPage() {
       </div>
       {addingGroup && <AddGroup onDone={() => { setAddingGroup(false); load(); }} onError={setError} />}
 
-      <div className="mt-4 grid gap-4">
+
+      <div className="grid gap-6">
         {loading && bills.length === 0 && <div className="text-[13px] text-[var(--text-3)]">Laen…</div>}
-        {blocks.map(({ key, group, items }) => {
+        {blocks.map(({ key, group, items }, i) => {
           if (!group && items.length === 0 && groups.length > 0) return null;
           const ol = openLabel(items);
           const sum = ol.eur.reduce((s, b) => s + (b.amountCents ?? 0), 0);
+          const color = group ? GROUP_COLORS[i % GROUP_COLORS.length] : "var(--text-3)";
           return (
-            <Panel key={key}>
-              <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1">
-                <div>
-                  <h2 className="text-[18px] font-semibold text-[var(--text)]">{group ? group.name : "Sorteerimata"}</h2>
-                  {group?.address && <div className="text-[12.5px] text-[var(--text-3)]">{group.address}</div>}
+            <div key={key} id={`plokk-${key}`} className="scroll-mt-24">
+              <Panel className="p-5 sm:p-6" style={{ boxShadow: `inset 3px 0 0 ${color}` }}>
+                <div className="flex flex-wrap items-start justify-between gap-3 pb-4 mb-2 border-b border-[var(--line)]">
+                  <div className="min-w-0">
+                    <h2 className="text-[20px] font-semibold text-[var(--text)]">{group ? group.name : "Sorteerimata"}</h2>
+                    {group?.address && <div className="text-[12.5px] text-[var(--text-3)] mt-0.5">{group.address}</div>}
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <div className="num text-[13px] text-[var(--text-2)]">{ol.text} · {money(sum, "EUR")}</div>
+                    {group && (
+                      <button type="button" aria-label={`Kustuta plokk: ${group.name}`} className="text-[12px] text-[var(--text-3)] underline"
+                        onClick={() => { if (window.confirm(`Kustutada plokk "${group.name}"? Arved jäävad alles (Sorteerimata).`)) act(() => call("DELETE", `/api/bill-groups?id=${encodeURIComponent(group.id)}`)); }}>
+                        Kustuta plokk
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div className="num text-[13px] text-[var(--text-2)]">{ol.text} · {money(sum, "EUR")}</div>
-              </div>
-              {items.length === 0 ? <EmptyState title="Arveid ei ole" /> : items.map(renderRow)}
-              {group && (
-                <button type="button" aria-label={`Kustuta plokk: ${group.name}`} className="mt-2 text-[12px] text-[var(--text-3)] underline"
-                  onClick={() => { if (window.confirm(`Kustutada plokk "${group.name}"? Arved jäävad alles (Sorteerimata).`)) act(() => call("DELETE", `/api/bill-groups?id=${encodeURIComponent(group.id)}`)); }}>
-                  Kustuta plokk
-                </button>
-              )}
-            </Panel>
+                {items.length === 0 ? <EmptyState title="Arveid ei ole" className="!py-6" /> : (
+                  <>
+                    <RowHead />
+                    {items.map(renderRow)}
+                  </>
+                )}
+              </Panel>
+            </div>
           );
         })}
       </div>
 
       {ignored.length > 0 && (
-        <details className="mt-6 text-[12.5px] text-[var(--text-3)]">
+        <details className="mt-6 rounded-[var(--r-lg)] border border-[var(--line)] px-5 py-4 text-[12.5px] text-[var(--text-3)]">
           <summary className="cursor-pointer">Ignoreeritud kirjad ({ignored.length}): kontrolli, et ükski arve pole siin</summary>
           <ul className="mt-2 space-y-1">
             {ignored.map((b) => (
