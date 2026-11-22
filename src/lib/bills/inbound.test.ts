@@ -18,7 +18,8 @@ const goodJson = JSON.stringify({
 })
 const PDF = { filename: 'arve.pdf', contentType: 'application/pdf' as const, data: Buffer.from('%PDF-1.4 x') }
 
-function harness(over: { llm?: () => Promise<string>; used?: number; claimed?: boolean; pdfText?: string; saveFileThrows?: boolean } = {}) {
+function harness(over: { llm?: () => Promise<string>; used?: number; claimed?: boolean; pdfText?: string; saveFileThrows?: boolean; dup?: boolean | 'throw' } = {}) {
+  const dupCalls: Parameters<InboundStore['findDuplicate']>[0][] = []
   const rows: { id: string; update?: BillUpdate; file?: boolean } = { id: 'bill_1' }
   const log: string[] = []
   const store: InboundStore = {
@@ -31,12 +32,18 @@ function harness(over: { llm?: () => Promise<string>; used?: number; claimed?: b
     },
     groups: async () => { log.push('groups'); return [{ id: 'kodu', keywords: ['Näidise 5'], sortOrder: 0 }] },
     extractionsLast24h: async () => { log.push('extractionsLast24h'); return over.used ?? 1 },
+    findDuplicate: async (m) => {
+      log.push('findDuplicate')
+      dupCalls.push(m)
+      if (over.dup === 'throw') throw new Error('db down: secret query context')
+      return over.dup === true
+    },
   }
   const io: BillIo = {
     pdfToText: async () => { log.push('pdfToText'); return over.pdfText ?? 'PDF tekst' },
     llm: async () => { log.push('llm'); return over.llm ? over.llm() : goodJson },
   }
-  return { rows, store, io, log, calls: () => log.filter((c) => c === 'llm').length }
+  return { rows, store, io, log, dupCalls, calls: () => log.filter((c) => c === 'llm').length }
 }
 
 test('claim gets emailId imap:<messageKey>', async () => {
@@ -192,4 +199,71 @@ test('claim receives NUL-free fromAddr and subject', async () => {
   await processBill(inp({ from: 'a\u0000b <noreply@naide.example>', subject: 'x\u0000y' }), h.store, h.io)
   assert.ok(got)
   assert.ok(!got.fromAddr.includes('\u0000') && !got.subject.includes('\u0000'))
+})
+test('duplicate bill (same supplier, amount, due date) is ignored as duplikaat, nulled, no PDF saved', async () => {
+  const h = harness({ dup: true })
+  assert.equal(await processBill(inp({ pdf: PDF }), h.store, h.io), 'ignored')
+  assert.deepEqual(h.dupCalls, [{ excludeId: 'bill_1', supplier: 'Näidis OÜ', amountCents: 1000, dueDate: '2026-12-05' }])
+  const u = h.rows.update
+  assert.equal(u?.status, 'ignored')
+  assert.equal(u?.ignoreReason, 'duplikaat')
+  assert.equal(u?.supplier, null)
+  assert.equal(u?.amountCents, null)
+  assert.equal(u?.dueDate, null)
+  assert.equal(u?.reference, null)
+  assert.equal(u?.iban, null)
+  assert.equal(u?.contractNo, null)
+  assert.equal(u?.serviceAddress, null)
+  assert.equal(u?.payUrl, null)
+  assert.equal(u?.groupId, null)
+  assert.equal(u?.currency, 'EUR')
+  assert.equal(h.rows.file, undefined)
+  assert.ok(!h.log.includes('saveFile'))
+})
+test('not a duplicate: bill stays new and PDF is saved', async () => {
+  const h = harness({ dup: false })
+  assert.equal(await processBill(inp({ pdf: PDF }), h.store, h.io), 'new')
+  assert.equal(h.dupCalls.length, 1)
+  assert.equal(h.rows.update?.status, 'new')
+  assert.equal(h.rows.file, true)
+})
+test('different amount or due date is passed to findDuplicate as-is', async () => {
+  const a = harness({ llm: async () => JSON.stringify({ ...JSON.parse(goodJson), amount: 12.5 }) })
+  assert.equal(await processBill(inp(), a.store, a.io), 'new')
+  assert.equal(a.dupCalls[0].amountCents, 1250)
+  const b = harness({ llm: async () => JSON.stringify({ ...JSON.parse(goodJson), dueDate: '2027-01-10' }) })
+  assert.equal(await processBill(inp(), b.store, b.io), 'new')
+  assert.equal(b.dupCalls[0].dueDate, '2027-01-10')
+})
+test('supplier is trimmed before the duplicate lookup', async () => {
+  const h = harness({ llm: async () => JSON.stringify({ ...JSON.parse(goodJson), supplier: '  Näidis OÜ ' }) })
+  await processBill(inp(), h.store, h.io)
+  assert.equal(h.dupCalls[0].supplier, 'Näidis OÜ')
+})
+test('missing dueDate: findDuplicate is not called, bill goes to review', async () => {
+  const h = harness({ dup: true, llm: async () => JSON.stringify({ ...JSON.parse(goodJson), dueDate: null }) })
+  assert.equal(await processBill(inp(), h.store, h.io), 'review')
+  assert.ok(!h.log.includes('findDuplicate'))
+  assert.equal(h.rows.update?.status, 'review')
+})
+test('findDuplicate throwing does not lose the bill and logs step=dedupe', async () => {
+  const h = harness({ dup: 'throw' })
+  const errs: unknown[][] = []
+  const orig = console.error
+  console.error = (...a: unknown[]) => { errs.push(a) }
+  try {
+    assert.equal(await processBill(inp({ pdf: PDF }), h.store, h.io), 'new')
+  } finally {
+    console.error = orig
+  }
+  const line = errs.map((a) => a.join(' ')).join('\n')
+  assert.match(line, /inbound bill failed step=dedupe/)
+  assert.doesNotMatch(line, /secret/)
+  assert.equal(h.rows.update?.status, 'new')
+  assert.equal(h.rows.file, true)
+})
+test('non-bill never calls findDuplicate', async () => {
+  const h = harness({ dup: true, llm: async () => JSON.stringify({ ...JSON.parse(goodJson), isBill: false }) })
+  assert.equal(await processBill(inp(), h.store, h.io), 'ignored')
+  assert.ok(!h.log.includes('findDuplicate'))
 })

@@ -25,6 +25,8 @@ export interface InboundStore {
   saveFile(id: string, f: PdfFile): Promise<void>
   groups(): Promise<GroupLite[]>
   extractionsLast24h(): Promise<number>
+  /** True when another bill (new/review/paid) has the same supplier (case-insensitive), amount and due date. */
+  findDuplicate(m: { excludeId: string; supplier: string; amountCents: number; dueDate: string }): Promise<boolean>
 }
 export interface BillIo {
   pdfToText(data: Buffer): Promise<string>
@@ -116,11 +118,42 @@ export async function processBill(input: BillInput, store: InboundStore, io: Bil
       })
       return 'ignored'
     }
+    // Several reminder mails for the same bill: same supplier + amount + due date = same bill.
+    const amountCents = toCents(e.amount)
+    const supplier = e.supplier?.trim()
+    if (supplier && amountCents !== null && e.dueDate) {
+      step = 'dedupe'
+      let isDuplicate = false
+      try {
+        isDuplicate = await store.findDuplicate({ excludeId: id, supplier, amountCents, dueDate: e.dueDate })
+      } catch (err) {
+        // A failed lookup must not lose the bill: log and treat it as a new bill.
+        console.error(`inbound bill failed step=${step} ${errTag(err)}`)
+      }
+      step = 'store_update'
+      if (isDuplicate) {
+        await store.update(id, {
+          status: 'ignored',
+          supplier: null,
+          amountCents: null,
+          currency: 'EUR',
+          dueDate: null,
+          reference: null,
+          iban: null,
+          contractNo: null,
+          serviceAddress: null,
+          payUrl: null,
+          groupId: null,
+          ignoreReason: 'duplikaat',
+        })
+        return 'ignored'
+      }
+    }
     const groupId = assignGroup([e.serviceAddress, e.supplier, e.contractNo, subject], await store.groups())
     await store.update(id, {
       status: decision.status,
       supplier: e.supplier,
-      amountCents: toCents(e.amount),
+      amountCents,
       currency: e.currency ?? 'EUR',
       dueDate: e.dueDate,
       reference: e.reference,
