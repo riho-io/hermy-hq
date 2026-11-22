@@ -148,5 +148,25 @@ class Main(unittest.TestCase):
         send.assert_called_once()
 
 
+class TelegramCfg(unittest.TestCase):
+    def test_token_from_doppler_when_env_file_lacks_it(self):
+        with mock.patch.object(b, "load_env", return_value={"TELEGRAM_HOME_CHANNEL": "123"}), \
+             mock.patch.object(b, "doppler_secret", return_value="tok") as dop, \
+             mock.patch.dict(b.os.environ, {}, clear=True):
+            self.assertEqual(b.telegram_cfg(), ("tok", "123"))
+            dop.assert_called_once_with("TELEGRAM_BOT_TOKEN")
+
+    def test_env_file_token_wins_and_doppler_not_called(self):
+        with mock.patch.object(b, "load_env", return_value={"TELEGRAM_BOT_TOKEN": "f", "TELEGRAM_HOME_CHANNEL": "1"}), \
+             mock.patch.object(b, "doppler_secret") as dop, \
+             mock.patch.dict(b.os.environ, {}, clear=True):
+            self.assertEqual(b.telegram_cfg(), ("f", "1"))
+            dop.assert_not_called()
+
+    def test_doppler_failure_gives_none(self):
+        with mock.patch("subprocess.run", side_effect=FileNotFoundError()):
+            self.assertIsNone(b.doppler_secret("X"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -65,6 +65,19 @@ export const store: InboundStore = {
     const g = await prisma.billGroup.findMany({ select: { id: true, keywords: true, sortOrder: true } })
     return g
   },
+  async findDuplicate({ excludeId, supplier, amountCents, dueDate }) {
+    const row = await prisma.bill.findFirst({
+      where: {
+        id: { not: excludeId },
+        supplier: { equals: supplier, mode: 'insensitive' },
+        amountCents,
+        dueDate: new Date(`${dueDate}T00:00:00Z`),
+        status: { in: ['new', 'review', 'paid'] },
+      },
+      select: { id: true },
+    })
+    return row !== null
+  },
   async extractionsLast24h() {
     return prisma.bill.count({ where: { source: 'email', createdAt: { gte: new Date(Date.now() - 86_400_000) } } })
   },
