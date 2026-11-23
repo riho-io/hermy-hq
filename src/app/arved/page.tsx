@@ -71,12 +71,12 @@ function bySupplier(items: Bill[]): { name: string; items: Bill[] }[] {
   return [...out.values()];
 }
 
-const ROW_GRID ="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 items-center px-2 sm:grid-cols-[minmax(0,1fr)_170px_110px_280px] sm:gap-x-4";
+const ROW_GRID ="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 items-center px-2 sm:grid-cols-[minmax(0,1fr)_170px_110px_340px] sm:gap-x-4";
 const GROUP_COLORS = ["var(--accent)", "var(--up)", "var(--text-2)"];
 
 function RowHead() {
   return (
-    <div className="hidden sm:grid grid-cols-[minmax(0,1fr)_170px_110px_280px] gap-x-4 px-2 pb-2 text-[10.5px] uppercase tracking-[0.08em] text-[var(--text-4)]">
+    <div className="hidden sm:grid grid-cols-[minmax(0,1fr)_170px_110px_340px] gap-x-4 px-2 pb-2 text-[10.5px] uppercase tracking-[0.08em] text-[var(--text-4)]">
       <span>Väljastaja</span>
       <span>Tähtaeg</span>
       <span className="text-right">Summa</span>
@@ -212,7 +212,7 @@ export default function ArvedPage() {
           <Pill tone={u.tone}>{u.label}</Pill>
         </div>
         <div className={`num text-[14px] ${rank === 0 ? "text-[var(--down)] font-medium" : "text-[var(--text)]"} text-right col-start-2 row-start-1 sm:col-start-3 sm:row-start-auto ${paid ? "line-through" : ""}`}>{money(b.amountCents, b.currency)}</div>
-        <div className="col-span-2 row-start-3 sm:col-span-1 sm:col-start-4 sm:row-start-auto flex flex-wrap items-center justify-end gap-1.5">
+        <div className="col-span-2 row-start-3 sm:col-span-1 sm:col-start-4 sm:row-start-auto flex flex-wrap sm:flex-nowrap items-center justify-end gap-1.5">
         <select
           aria-label={`Plokk: ${name}`}
           value={b.groupId ?? ""}
