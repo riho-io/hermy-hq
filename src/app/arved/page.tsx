@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
-import { Plus, RefreshCw, FileText, Trash2, Check, Undo2, AlertTriangle } from "lucide-react";
+import { Plus, RefreshCw, FileText, Trash2, Check, Undo2, AlertTriangle, ChevronRight } from "lucide-react";
 import { Panel, Pill, Button, Eyebrow, EmptyState } from "@/components/ui/kit";
 
 interface Group { id: string; name: string; address: string | null; keywords: string[]; sortOrder: number }
@@ -56,7 +56,22 @@ function sortBills(bills: Bill[], todayIso: string): Bill[] {
   });
 }
 
-const ROW_GRID = "grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 items-center px-2 sm:grid-cols-[minmax(0,1fr)_170px_110px_280px] sm:gap-x-4";
+// Argo cron "Arved: postkastid -> Hermy HQ" (argo_arved.py), profile default.
+const ARVED_CRON_ID = "26aebfdcd850";
+
+// Keeps the sorted order: a supplier sits where its most urgent bill is.
+function bySupplier(items: Bill[]): { name: string; items: Bill[] }[] {
+  const out = new Map<string, { name: string; items: Bill[] }>();
+  for (const b of items) {
+    const name = b.supplier ?? b.subject ?? "(nimeta)";
+    const k = name.trim().toLowerCase();
+    if (!out.has(k)) out.set(k, { name, items: [] });
+    out.get(k)!.items.push(b);
+  }
+  return [...out.values()];
+}
+
+const ROW_GRID ="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 items-center px-2 sm:grid-cols-[minmax(0,1fr)_170px_110px_280px] sm:gap-x-4";
 const GROUP_COLORS = ["var(--accent)", "var(--up)", "var(--text-2)"];
 
 function RowHead() {
@@ -84,8 +99,11 @@ export default function ArvedPage() {
   const [adding, setAdding] = useState(false);
   const [addingGroup, setAddingGroup] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const [syncing, setSyncing] = useState<string | null>(null);
+  const [open, setOpen] = useState<Set<string>>(new Set());
+
+  const load = useCallback(async (quiet = false) => {
+    if (!quiet) setLoading(true);
     try {
       const res = await fetch("/api/bills", { cache: "no-store" });
       if (!res.ok) throw new Error(`Viga ${res.status}`);
@@ -99,6 +117,40 @@ export default function ArvedPage() {
     }
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // Mail is read on Argo, not here: queue a run of the Argo bills cron through the existing
+  // cron.run queue (no approval; executor polls every 2 min), then reload quietly until the
+  // run has had time to post new bills.
+  const syncMail = async () => {
+    setError(null);
+    setSyncing("Argo kontrollib postkaste…");
+    try {
+      const res = await fetch("/api/hermes/crons", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ op: "run", id: ARVED_CRON_ID, profile: "default" }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `Viga ${res.status}`);
+      const { request } = await res.json();
+      const start = Date.now();
+      let launchedAt: number | null = null;
+      while (Date.now() - start < 6 * 60_000 && (launchedAt === null || Date.now() - launchedAt < 2 * 60_000)) {
+        await new Promise((r) => setTimeout(r, 15_000));
+        if (launchedAt === null) {
+          const r = await fetch(`/api/hermes/requests?ids=${request.id}`, { cache: "no-store" });
+          const row = r.ok ? (await r.json()).requests?.[0] : null;
+          if (row?.status === "failed") throw new Error(`Postkastide kontroll ebaõnnestus: ${row.error ?? "tundmatu viga"}`);
+          if (row?.status === "done") { launchedAt = Date.now(); setSyncing("Postkastid loetakse, uued arved tulevad…"); }
+        }
+        await load(true);
+      }
+      if (launchedAt === null) setError("Argo ei võtnud päringut 6 min jooksul vastu.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Viga");
+    } finally {
+      setSyncing(null);
+      load(true);
+    }
+  };
 
   const act = async (fn: () => Promise<void>) => {
     setError(null);
@@ -120,6 +172,14 @@ export default function ArvedPage() {
     const eur = nw.filter((b) => b.currency === "EUR");
     const other = nw.length - eur.length;
     return { eur, text: `${eur.length} maksmata${other > 0 ? ` + ${other} muus vääringus` : ""}` };
+  };
+
+  // All blocks together: open EUR bills (status "new"); review rows are not counted until fixed.
+  const allOpen = openLabel(bills).eur;
+  const total = {
+    count: allOpen.length,
+    sum: allOpen.reduce((s, b) => s + (b.amountCents ?? 0), 0),
+    late: allOpen.filter((b) => isOverdue(b, todayIso)).length,
   };
 
   const overview = [
@@ -189,6 +249,40 @@ export default function ArvedPage() {
     );
   };
 
+  // One summary row per supplier with 2+ bills; the arrow opens its bills. Single bills stay plain rows.
+  const renderSupplier = (blockKey: string, name: string, list: Bill[], tint: string) => {
+    if (list.length === 1) return renderRow(list[0], tint);
+    const id = `${blockKey}:${name.toLowerCase()}`;
+    const isOpen = open.has(id);
+    const ol = openLabel(list);
+    const sum = ol.eur.reduce((s, b) => s + (b.amountCents ?? 0), 0);
+    const late = list.filter((b) => isOverdue(b, todayIso)).length;
+    const first = list[0];
+    const u = urgency(first);
+    return (
+      <div key={id} className="border-t border-[var(--line-strong)] first:border-t-0">
+        <button type="button" aria-expanded={isOpen} aria-label={`${isOpen ? "Sulge" : "Ava"} arved: ${name}`}
+          onClick={() => setOpen((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; })}
+          className={`${ROW_GRID} w-full py-3 text-left transition-colors hover:bg-[color-mix(in_srgb,var(--text)_4%,transparent)]`}>
+          <div className="min-w-0 flex items-center gap-2">
+            <ChevronRight aria-hidden className={`w-4 h-4 shrink-0 text-[var(--text-3)] transition-transform ${isOpen ? "rotate-90" : ""}`} />
+            <div className="min-w-0">
+              <div className="text-[14px] font-medium text-[var(--text)]">{name}</div>
+              <div className="text-[12px] text-[var(--text-2)]">{ol.text}{late > 0 ? ` · ${late} hilinenud` : ""}</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 sm:col-start-2 row-start-2 sm:row-start-auto">
+            <span className="text-[12.5px] text-[var(--text-2)]">{fmtDate(first.dueDate)}</span>
+            <Pill tone={u.tone}>{u.label}</Pill>
+          </div>
+          <div className={`num text-[14px] font-semibold text-right col-start-2 row-start-1 sm:col-start-3 sm:row-start-auto ${late > 0 ? "text-[var(--down)]" : "text-[var(--text)]"}`}>{money(sum, "EUR")}</div>
+          <span aria-hidden className="hidden sm:block" />
+        </button>
+        {isOpen && <div className="pl-4 sm:pl-6 pb-2">{list.map((b) => renderRow(b, tint))}</div>}
+      </div>
+    );
+  };
+
   return (
     <div className="relative z-10 w-full mx-auto pb-16">
       <div className="hq-rise pt-4 pb-6 flex items-end justify-between gap-4">
@@ -200,11 +294,12 @@ export default function ArvedPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={load} aria-label="Värskenda" className="btn-ghost inline-flex items-center justify-center w-9 h-9"><RefreshCw className="w-4 h-4" /></button>
+          <button type="button" onClick={syncMail} disabled={syncing !== null} aria-label="Too uued arved meilidest" title="Too uued arved meilidest" className="btn-ghost inline-flex items-center justify-center w-9 h-9 disabled:opacity-60"><RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} /></button>
           <Button variant="primary" onClick={() => setAdding((v) => !v)}><Plus className="w-4 h-4" /> Lisa arve</Button>
         </div>
       </div>
 
+      {syncing && <div role="status" className="mb-4 text-[13px] text-[var(--text-3)]">{syncing}</div>}
       {error && <div role="alert" className="mb-4 rounded-md border border-[var(--down)] px-3 py-2 text-[13px] text-[var(--down)]">{error}</div>}
 
       {adding && (
@@ -224,6 +319,13 @@ export default function ArvedPage() {
       )}
 
       <nav aria-label="Plokkide ülevaade" className="mb-6 flex flex-wrap gap-2">
+        {total.count > 0 && (
+          <div className="flex items-center gap-2.5 rounded-[var(--r-lg)] border border-[var(--line-strong)] bg-[var(--surface-2)] px-3.5 py-2">
+            <span className="text-[13px] font-semibold text-[var(--text)]">Maksta kokku</span>
+            <span className="num text-[13px] text-[var(--text)]">{total.count} · {money(total.sum, "EUR")}</span>
+            {total.late > 0 && <Pill tone="down">{total.late} hilinenud</Pill>}
+          </div>
+        )}
         {overview.map((o) => (
           <a key={o.id} href={`#plokk-${o.id}`} style={{ background: `color-mix(in srgb, ${o.color} 14%, transparent)`, borderColor: `color-mix(in srgb, ${o.color} 40%, transparent)` }} className="flex items-center gap-2.5 rounded-[var(--r-lg)] border px-3.5 py-2 transition-[filter] hover:brightness-110">
             <span aria-hidden className="w-2 h-2 rounded-full" style={{ background: o.color }} />
@@ -275,7 +377,7 @@ export default function ArvedPage() {
                 {items.length === 0 ? <EmptyState title="Arveid ei ole" className="!py-6" /> : (
                   <>
                     <RowHead />
-                    {items.map((b) => renderRow(b, color))}
+                    {bySupplier(items).map((s) => renderSupplier(key, s.name, s.items, color))}
                   </>
                 )}
               </Panel>
