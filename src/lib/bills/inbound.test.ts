@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { processBill, stripNul, DAILY_LLM_CAP, type InboundStore, type BillIo, type BillInput, type BillUpdate } from './inbound'
+import { processBill, stripNul, isGarbageText, DAILY_LLM_CAP, MAX_PDF_BYTES, type InboundStore, type BillIo, type BillInput, type BillUpdate } from './inbound'
 
 const KEY = 'a'.repeat(64)
 const inp = (over: Partial<BillInput> = {}): BillInput => ({
@@ -16,9 +16,11 @@ const goodJson = JSON.stringify({
   isBill: true, confidence: 0.9, supplier: 'Näidis OÜ', amount: 10, currency: 'EUR', dueDate: '2026-12-05',
   reference: null, iban: null, contractNo: null, serviceAddress: 'Näidise 5, Jõhvi', payUrl: null,
 })
+const TEXT = Array.from({ length: 40 }, (_, i) => `sõna${i}`).join(' ')
+const GARBAGE = `!" ""#"$! % &' ()*+ ,-./ !" ""#"$! % &' ()*+`
 const PDF = { filename: 'arve.pdf', contentType: 'application/pdf' as const, data: Buffer.from('%PDF-1.4 x') }
 
-function harness(over: { llm?: () => Promise<string>; used?: number; claimed?: boolean; pdfText?: string; saveFileThrows?: boolean; dup?: boolean | 'throw' } = {}) {
+function harness(over: { llm?: () => Promise<string>; vision?: () => Promise<string>; used?: number; claimed?: boolean; pdfText?: string; saveFileThrows?: boolean; dup?: boolean | 'throw' } = {}) {
   const dupCalls: Parameters<InboundStore['findDuplicate']>[0][] = []
   const rows: { id: string; update?: BillUpdate; file?: boolean } = { id: 'bill_1' }
   const log: string[] = []
@@ -40,10 +42,11 @@ function harness(over: { llm?: () => Promise<string>; used?: number; claimed?: b
     },
   }
   const io: BillIo = {
-    pdfToText: async () => { log.push('pdfToText'); return over.pdfText ?? 'PDF tekst' },
+    pdfToText: async () => { log.push('pdfToText'); return over.pdfText ?? TEXT },
     llm: async () => { log.push('llm'); return over.llm ? over.llm() : goodJson },
+    pdfVision: async () => { log.push('vision'); return over.vision ? over.vision() : goodJson },
   }
-  return { rows, store, io, log, dupCalls, calls: () => log.filter((c) => c === 'llm').length }
+  return { rows, store, io, log, dupCalls, calls: () => log.filter((c) => c === 'llm').length, visions: () => log.filter((c) => c === 'vision').length }
 }
 
 test('claim gets emailId imap:<messageKey>', async () => {
@@ -137,14 +140,14 @@ test('an injected instruction in the email cannot change the schema of the resul
   assert.equal(h.rows.update?.status, 'new')
 })
 
-test('pdf present but unreadable (empty text) and LLM says not a bill -> review, PDF saved', async () => {
-  const h = harness({ pdfText: '', llm: async () => JSON.stringify({ ...JSON.parse(goodJson), isBill: false }) })
+test('pdf unreadable, vision unparsable, LLM says not a bill -> review, PDF saved', async () => {
+  const h = harness({ pdfText: '', vision: async () => 'not json', llm: async () => JSON.stringify({ ...JSON.parse(goodJson), isBill: false }) })
   assert.equal(await processBill(inp({ pdf: PDF }), h.store, h.io), 'review')
   assert.equal(h.rows.update?.status, 'review')
   assert.equal(h.rows.file, true)
 })
 test('pdf with text and LLM says not a bill -> ignored, no file', async () => {
-  const h = harness({ pdfText: 'Päris tekst', llm: async () => JSON.stringify({ ...JSON.parse(goodJson), isBill: false }) })
+  const h = harness({ pdfText: TEXT, llm: async () => JSON.stringify({ ...JSON.parse(goodJson), isBill: false }) })
   assert.equal(await processBill(inp({ pdf: PDF }), h.store, h.io), 'ignored')
   assert.equal(h.rows.file, undefined)
 })
@@ -266,4 +269,102 @@ test('non-bill never calls findDuplicate', async () => {
   const h = harness({ dup: true, llm: async () => JSON.stringify({ ...JSON.parse(goodJson), isBill: false }) })
   assert.equal(await processBill(inp(), h.store, h.io), 'ignored')
   assert.ok(!h.log.includes('findDuplicate'))
+})
+
+// --- garbage-text heuristic ---
+test('isGarbageText: empty and whitespace are garbage', () => {
+  assert.equal(isGarbageText(''), true)
+  assert.equal(isGarbageText('  \n '), true)
+})
+test('isGarbageText: broken glyph output is garbage', () => {
+  assert.equal(isGarbageText(GARBAGE.repeat(20)), true)
+})
+test('isGarbageText: fewer than 30 word-like tokens is garbage', () => {
+  assert.equal(isGarbageText('Arve summa 24,80 EUR'), true)
+})
+test('isGarbageText: a normal Estonian bill text is usable', () => {
+  const bill = 'Elektrum Eesti OÜ arve number 2026-1187 kuupäev 10.11.2026 maksetähtaeg 30.11.2026 viitenumber 1234567 ' +
+    'klient Mari Maasikas tarbimiskoht Tamme 5 Tartu elektrienergia november 120 kWh võrguteenus aktsiis taastuvenergia tasu ' +
+    'käibemaks 24% arve summa kokku 24,80 EUR tasuda pangalingiga või ülekandega kontole EE382200221020145685'
+  assert.equal(isGarbageText(bill), false)
+})
+
+// --- vision fallback ---
+const noAmount = JSON.stringify({ ...JSON.parse(goodJson), amount: null })
+test('garbage PDF text: text model gets no PDF text, vision result is used', async () => {
+  const h = harness({ pdfText: GARBAGE, llm: async () => noAmount })
+  assert.equal(await processBill(inp({ pdf: PDF }), h.store, h.io), 'new')
+  assert.equal(h.visions(), 1)
+  assert.equal(h.rows.update?.amountCents, 1000)
+  assert.equal(h.rows.file, true)
+})
+test('garbage PDF text and no body: vision alone decides', async () => {
+  const h = harness({ pdfText: GARBAGE })
+  assert.equal(await processBill(inp({ pdf: PDF, bodyText: '' }), h.store, h.io), 'new')
+  assert.equal(h.calls(), 0)
+  assert.equal(h.visions(), 1)
+})
+test('good PDF text but missing dueDate: vision fills it', async () => {
+  const h = harness({ llm: async () => JSON.stringify({ ...JSON.parse(goodJson), dueDate: null }) })
+  assert.equal(await processBill(inp({ pdf: PDF }), h.store, h.io), 'new')
+  assert.equal(h.visions(), 1)
+  assert.equal(h.rows.update?.dueDate, '2026-12-05')
+})
+test('good text extraction: vision is not called', async () => {
+  const h = harness()
+  assert.equal(await processBill(inp({ pdf: PDF }), h.store, h.io), 'new')
+  assert.equal(h.visions(), 0)
+})
+test('text model says not a bill: vision is not called', async () => {
+  const h = harness({ llm: async () => JSON.stringify({ ...JSON.parse(goodJson), isBill: false, amount: null }) })
+  assert.equal(await processBill(inp({ pdf: PDF }), h.store, h.io), 'ignored')
+  assert.equal(h.visions(), 0)
+})
+test('no PDF: vision is never called', async () => {
+  const h = harness({ llm: async () => noAmount })
+  assert.equal(await processBill(inp(), h.store, h.io), 'review')
+  assert.equal(h.visions(), 0)
+})
+test('vision sees a company payer: bill is ignored as firma arve', async () => {
+  const h = harness({ pdfText: GARBAGE, vision: async () => JSON.stringify({ ...JSON.parse(goodJson), billTo: 'Põhja Mööbel OÜ' }) })
+  assert.equal(await processBill(inp({ pdf: PDF, bodyText: '' }), h.store, h.io), 'ignored')
+  assert.equal(h.rows.update?.ignoreReason, 'firma arve')
+})
+test('vision failing keeps review, warns with class + static message only', async () => {
+  const warns: string[] = []
+  const orig = console.warn
+  console.warn = (...a: unknown[]) => { warns.push(a.join(' ')) }
+  try {
+    const h = harness({ pdfText: GARBAGE, llm: async () => noAmount, vision: async () => { throw new Error('gemini 503') } })
+    assert.equal(await processBill(inp({ pdf: PDF }), h.store, h.io), 'review')
+    const h2 = harness({ pdfText: GARBAGE, llm: async () => noAmount, vision: async () => { throw new Error('secret mail text') } })
+    assert.equal(await processBill(inp({ pdf: PDF }), h2.store, h2.io), 'review')
+  } finally {
+    console.warn = orig
+  }
+  assert.ok(warns.includes('inbound pdf vision failed Error gemini 503'))
+  assert.ok(warns.includes('inbound pdf vision failed Error'))
+  assert.ok(!warns.some((w) => w.includes('secret')))
+})
+test('vision returning junk keeps the text result (review)', async () => {
+  const h = harness({ llm: async () => noAmount, vision: async () => 'not json' })
+  assert.equal(await processBill(inp({ pdf: PDF }), h.store, h.io), 'review')
+  assert.equal(h.rows.update?.status, 'review')
+})
+test('daily cap reached: neither text model nor vision is called', async () => {
+  const h = harness({ used: DAILY_LLM_CAP, pdfText: GARBAGE })
+  assert.equal(await processBill(inp({ pdf: PDF }), h.store, h.io), 'review')
+  assert.equal(h.calls() + h.visions(), 0)
+})
+test('PDF over MAX_PDF_BYTES is never sent to vision', async () => {
+  const big = { ...PDF, data: Buffer.alloc(MAX_PDF_BYTES + 1) }
+  const h = harness({ pdfText: GARBAGE, llm: async () => noAmount })
+  const orig = console.warn
+  console.warn = () => {}
+  try {
+    assert.equal(await processBill(inp({ pdf: big }), h.store, h.io), 'review')
+  } finally {
+    console.warn = orig
+  }
+  assert.equal(h.visions(), 0)
 })

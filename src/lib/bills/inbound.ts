@@ -1,7 +1,10 @@
 import { buildPrompt, decideStatus, parseExtraction, toCents } from './extract'
 import { assignGroup, type GroupLite } from './group'
 
+// Each bill row allows one text extraction plus at most one PDF vision call, both behind this cap.
 export const DAILY_LLM_CAP = 60
+/** Largest PDF accepted from ingest and sent to the vision model. */
+export const MAX_PDF_BYTES = 3 * 1024 * 1024
 
 export type Outcome = 'duplicate' | 'review' | 'new' | 'ignored'
 export type PdfFile = { filename: string; contentType: 'application/pdf'; data: Buffer }
@@ -31,6 +34,8 @@ export interface InboundStore {
 export interface BillIo {
   pdfToText(data: Buffer): Promise<string>
   llm(p: { system: string; user: string }): Promise<string>
+  /** Reads the PDF itself (scans, broken text layer) with the same prompt; returns the raw JSON reply. */
+  pdfVision(data: Buffer, p: { system: string; user: string }): Promise<string>
 }
 export type BillInput = {
   messageKey: string
@@ -50,7 +55,20 @@ const errTag = (err: unknown) => {
 }
 
 // Adapter messages matching this are static and carry no mail content; nothing else is logged.
-const STATIC_MSG = /^(deepseek \d{3}|DEEPSEEK_API_KEY missing)$/
+const STATIC_MSG = /^(deepseek \d{3}|DEEPSEEK_API_KEY missing|gemini \d{3}|gemini empty|GEMINI_API_KEY missing|pdf too large)$/
+const staticMsg = (err: unknown) => (err instanceof Error && STATIC_MSG.test(err.message) ? ` ${err.message}` : '')
+
+/**
+ * True when extracted PDF text is unusable: empty, mostly symbols (broken font mapping like `!" ""#"$! % &'`),
+ * or too few word-like tokens to hold a bill.
+ */
+export function isGarbageText(text: string): boolean {
+  const t = text.trim()
+  if (!t) return true
+  const good = (t.match(/[\p{L}\p{N}\s]/gu) ?? []).length
+  if (good / t.length < 0.6) return true
+  return (t.match(/[\p{L}\p{N}]{2,}/gu) ?? []).length < 30
+}
 
 export function stripHtml(html: string): string {
   return html
@@ -87,19 +105,46 @@ export async function processBill(input: BillInput, store: InboundStore, io: Bil
         console.warn('inbound pdf text failed', errTag(err))
       }
     }
+    // Garbage glyphs only waste tokens and confuse the text model: drop them and let vision read the PDF.
+    if (pdf && isGarbageText(pdfText)) pdfText = ''
     const bodyText = input.bodyText
-    if (!bodyText && !pdfText) return 'review'
+    if (!bodyText && !pdfText && !pdf) return 'review'
 
-    step = 'llm'
-    const raw = await io.llm(buildPrompt({ from, subject, bodyText, pdfText }))
-    step = 'parse'
-    const e = parseExtraction(raw)
+    let e: ReturnType<typeof parseExtraction> = null
+    if (bodyText || pdfText) {
+      step = 'llm'
+      const raw = await io.llm(buildPrompt({ from, subject, bodyText, pdfText }))
+      step = 'parse'
+      e = parseExtraction(raw)
+    }
+
+    // Vision fallback: the PDF text was unusable, or the text model could not find the amount or due date of a bill.
+    let usedVision = false
+    if (pdf && (!pdfText || !e || (e.isBill && (e.amount === null || e.dueDate === null)))) {
+      step = 'vision'
+      try {
+        if (pdf.data.length > MAX_PDF_BYTES) throw new Error('pdf too large')
+        const v = parseExtraction(
+          await io.pdfVision(pdf.data, buildPrompt({ from, subject, bodyText, pdfText: '(see the attached PDF file)' })),
+        )
+        if (v) {
+          e = v
+          usedVision = true
+        } else {
+          console.warn('inbound pdf vision unparsable')
+        }
+      } catch (err) {
+        // Bill stays in review; log the class and static adapter message only, never mail content.
+        console.warn(`inbound pdf vision failed ${errTag(err)}${staticMsg(err)}`)
+      }
+    }
     if (!e) return 'review'
 
     step = 'store_update'
     let decision = decideStatus(e)
     // A scanned/unreadable PDF must never hide a real bill under "ignored": send it to review and keep the file.
-    if (decision.status === 'ignored' && pdf && !pdfText.trim()) decision = { status: 'review', reason: null }
+    // A vision verdict has seen the PDF itself, so it may ignore (e.g. a company payer).
+    if (decision.status === 'ignored' && pdf && !pdfText.trim() && !usedVision) decision = { status: 'review', reason: null }
     if (decision.status === 'ignored') {
       // Not a bill: keep only the verdict, none of the extracted personal data.
       await store.update(id, {
@@ -174,8 +219,7 @@ export async function processBill(input: BillInput, store: InboundStore, io: Bil
     }
     return decision.status
   } catch (err) {
-    const msg = err instanceof Error && STATIC_MSG.test(err.message) ? ` ${err.message}` : ''
-    console.error(`inbound bill failed step=${step} ${errTag(err)}${msg}`)
+    console.error(`inbound bill failed step=${step} ${errTag(err)}${staticMsg(err)}`)
     return 'review'
   }
 }
