@@ -7,7 +7,7 @@ const HALF_0285 = 28 // 0.285*100 = 28.499999999999996 -> 28
 const good = {
   isBill: true, confidence: 0.9, supplier: 'Näidis Energia OÜ', amount: 45.2, currency: 'EUR',
   dueDate: '2026-12-05', reference: '1234567', iban: 'EE382200221020145685',
-  contractNo: 'K-100', serviceAddress: 'Näidise 5, Jõhvi', payUrl: 'https://naide.example/pay/1',
+  contractNo: 'K-100', serviceAddress: 'Näidise 5, Jõhvi', billTo: null, payUrl: 'https://naide.example/pay/1',
 }
 
 test('parses a valid object, also inside a code fence', () => {
@@ -73,6 +73,21 @@ test('decideStatus: missing amount, missing due date or low confidence goes to r
   assert.equal(decideStatus({ ...good, amount: null }).status, 'review')
   assert.equal(decideStatus({ ...good, dueDate: null }).status, 'review')
   assert.equal(decideStatus({ ...good, confidence: 0.59 }).status, 'review')
+})
+test('decideStatus: company payer is ignored, person payer is not', () => {
+  for (const b of ['Põhja Mööbel OÜ', 'PML', 'Forwood OÜ, Tallinn', 'Sisum OÜ']) {
+    const r = decideStatus({ ...good, billTo: b })
+    assert.equal(r.status, 'ignored')
+    assert.equal(r.reason, 'firma arve')
+  }
+  assert.equal(decideStatus({ ...good, billTo: 'Kersti Urbala, Aia tn 7, Raasiku' }).status, 'new')
+  assert.equal(decideStatus({ ...good, billTo: 'Riho Urbala' }).status, 'new')
+})
+test('missing billTo still parses', () => {
+  const { billTo: _omit, ...old } = good
+  const e = parseExtraction(JSON.stringify(old))
+  assert.ok(e)
+  assert.equal(e.billTo, null)
 })
 test('toCents uses Math.round(amount*100), also for half-cent inputs', () => {
   assert.equal(toCents(45.2), 4520)

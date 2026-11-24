@@ -40,6 +40,7 @@ export const ExtractionSchema = z.object({
   iban: lenient(z.string().regex(/^[A-Z]{2}\d{2}[A-Z0-9 ]{8,30}$/)),
   contractNo: clip(60).nullable(),
   serviceAddress: clip(200).nullable(),
+  billTo: clip(200).nullable().optional().default(null),
   payUrl: lenient(httpsUrl),
 })
 export type Extraction = z.infer<typeof ExtractionSchema>
@@ -60,8 +61,12 @@ export function toCents(amount: number | null): number | null {
   return amount === null ? null : Math.round(amount * 100)
 }
 
-export function decideStatus(e: Extraction): { status: 'new' | 'review' | 'ignored'; reason: string | null } {
+// Bills addressed to Riho's companies are not personal bills. A person's name never decides.
+export const COMPANY_PAYER_RE = /p[oõ]hja\s*m[oö]{1,2}bel|\bforwood\b|\bsisum\b|\bpml\b/i
+
+export function decideStatus(e: Omit<Extraction, 'billTo'> & { billTo?: string | null }): { status: 'new' | 'review' | 'ignored'; reason: string | null } {
   if (!e.isBill) return { status: 'ignored', reason: 'ei ole arve' }
+  if (e.billTo && COMPANY_PAYER_RE.test(e.billTo)) return { status: 'ignored', reason: 'firma arve' }
   if (e.amount !== null && e.dueDate !== null && e.confidence >= 0.6) return { status: 'new', reason: null }
   return { status: 'review', reason: null }
 }
@@ -72,7 +77,8 @@ const SYSTEM = [
   'Keys (all required, use null when unknown): isBill (boolean: true only for a real bill asking for payment; false for newsletters, ads, already-paid receipts, bank statements, order confirmations),',
   'confidence (number 0..1), supplier (string), amount (number, the total of THIS invoice incl. VAT, e.g. "Arve summa"; if the payable total also includes earlier unpaid debt or a prior balance, e.g. "Tasumisele kuulub" = invoice + "võlgnevus", use the invoice total only; no currency symbol), currency (ISO code like EUR),',
   'dueDate (YYYY-MM-DD, the payment deadline), reference (payment reference number), iban (recipient IBAN without spaces),',
-  'contractNo (customer or contract number), serviceAddress (the property/service address the bill is about), payUrl (https link to pay or view the bill).',
+  'contractNo (customer or contract number), serviceAddress (the property/service address the bill is about), payUrl (https link to pay or view the bill),',
+  'billTo (name and address of the customer/payer the invoice is addressed to, e.g. "Arve saaja"/"Maksja"/"Klient").',
 ].join(' ')
 
 // strip delimiter tags first so hostile mail cannot close <email>
