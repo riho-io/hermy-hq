@@ -191,6 +191,8 @@ textarea, input {
   --up:     #5fd0a0;
   --down:   #f28b82;
   --warn:   #f5c451;
+  /* /arved: one solid red for overdue amounts (≥4.5:1 on surface-1..3) */
+  --bill-late: #ff5c52;
 
   /* radius — calm & precise, never toy-soft */
   --r-sm: 8px;
