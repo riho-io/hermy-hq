@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
-import { Plus, RefreshCw, FileText, Trash2, Check, Undo2, AlertTriangle, ChevronRight } from "lucide-react";
+import { Plus, RefreshCw, FileText, Trash2, Check, Undo2, AlertTriangle, ChevronRight, ExternalLink } from "lucide-react";
 import { Panel, Pill, Button, Eyebrow, EmptyState } from "@/components/ui/kit";
 
 interface Group { id: string; name: string; address: string | null; keywords: string[]; sortOrder: number }
@@ -212,26 +212,29 @@ export default function ArvedPage() {
           <Pill tone={u.tone}>{u.label}</Pill>
         </div>
         <div className={`num text-[14px] ${rank === 0 ? "text-[var(--down)] font-medium" : "text-[var(--text)]"} text-right col-start-2 row-start-1 sm:col-start-3 sm:row-start-auto ${paid ? "line-through" : ""}`}>{money(b.amountCents, b.currency)}</div>
-        <div className="col-span-2 row-start-3 sm:col-span-1 sm:col-start-4 sm:row-start-auto flex flex-wrap sm:flex-nowrap items-center justify-end gap-1.5">
+        {/* Fixed slots (select · PDF · link · Makstud · delete) so every row's buttons line up; empty slots keep their width. */}
+        <div className="col-span-2 row-start-3 sm:col-span-1 sm:col-start-4 sm:row-start-auto grid grid-cols-[minmax(0,1fr)_32px_32px_auto_32px] items-center gap-1.5">
         <select
           aria-label={`Plokk: ${name}`}
           value={b.groupId ?? ""}
           onChange={(e) => act(() => call("PATCH", "/api/bills", { id: b.id, groupId: e.target.value || null }))}
-          className="rounded-md border border-[var(--line)] bg-transparent px-2 py-1 text-[12.5px] text-[var(--text-2)]"
+          className="w-full min-w-0 rounded-md border border-[var(--line)] bg-transparent px-2 py-1 text-[12.5px] text-[var(--text-2)]"
         >
           <option value="">Sorteerimata</option>
           {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
         </select>
-        {b.hasFile && (
-          <a href={`/api/bills/file?id=${encodeURIComponent(b.id)}`} target="_blank" rel="noopener noreferrer" aria-label={`Ava PDF: ${name}`} className="btn-ghost inline-flex w-8 h-8 items-center justify-center">
+        {b.hasFile ? (
+          <a href={`/api/bills/file?id=${encodeURIComponent(b.id)}`} target="_blank" rel="noopener noreferrer" aria-label={`Ava PDF: ${name}`} title="Ava PDF" className="btn-ghost inline-flex w-8 h-8 items-center justify-center">
             <FileText className="w-4 h-4" />
           </a>
-        )}
-        {b.payUrl && host && (
-          <a href={b.payUrl} target="_blank" rel="noopener noreferrer" className="text-[12.5px] text-[var(--text-2)] underline">Ava link ({host})</a>
-        )}
+        ) : <span aria-hidden />}
+        {b.payUrl && host ? (
+          <a href={b.payUrl} target="_blank" rel="noopener noreferrer" aria-label={`Ava makselink (${host}): ${name}`} title={`Ava link (${host})`} className="btn-ghost inline-flex w-8 h-8 items-center justify-center">
+            <ExternalLink className="w-4 h-4" />
+          </a>
+        ) : <span aria-hidden />}
         {b.status === "paid" ? (
-          <button type="button" aria-label={`Taasta: ${name}`} className="btn-ghost w-8 h-8 inline-flex items-center justify-center"
+          <button type="button" aria-label={`Taasta: ${name}`} className="btn-ghost w-8 h-8 inline-flex items-center justify-center justify-self-end"
             onClick={() => act(() => call("PATCH", "/api/bills", { id: b.id, status: "new" }))}><Undo2 className="w-4 h-4" /></button>
         ) : (
           // Native button (kit Button has no aria-label prop); same classes as Button variant="primary".
