@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { hasInternalSecret } from '@/lib/internal-secret';
+import { guestMayUse, roleOf } from '@/lib/access';
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -60,6 +61,22 @@ export async function proxy(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     return NextResponse.redirect(new URL('/login', request.url));
+  }
+
+  // Role is re-read from env on every request: an address removed from the lists loses access at once.
+  const role = roleOf(token.email as string | undefined);
+  if (!role) {
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+    return NextResponse.redirect(new URL('/login', request.url));
+  }
+  // Bill guest: deny by default, only the bills page and its two APIs. Route handlers check again.
+  if (role === 'bills_guest' && !guestMayUse(pathname, request.method)) {
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+    return NextResponse.redirect(new URL('/arved', request.url));
   }
 
   return NextResponse.next();

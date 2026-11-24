@@ -5,12 +5,21 @@ import { Sidebar } from '@/components/sidebar';
 import { CommandPalette } from '@/components/command-palette';
 import { ArgoHealthBanner } from './argo-health-banner';
 
-export function ConditionalLayout({ children }: { children: React.ReactNode }) {
+export function ConditionalLayout({ children, bare = false }: { children: React.ReactNode; bare?: boolean }) {
   const pathname = usePathname();
   const isStandalone = pathname === '/login';
 
   if (isStandalone) {
     return <>{children}</>;
+  }
+
+  if (bare) {
+    return (
+      <main className="relative min-h-screen px-4 sm:px-6 md:px-10 lg:px-12 py-4 md:py-8">
+        <div className="hq-ambient" aria-hidden />
+        <div className="pb-safe">{children}</div>
+      </main>
+    );
   }
 
   return (

@@ -56,7 +56,10 @@ const groupBase = z.strictObject({
   sortOrder: z.number().int().min(0).max(1000).optional(),
 })
 export const GroupSchema = groupBase.extend({ keywords: z.array(keyword).max(20).default([]) })
-export const GroupPatchSchema = groupBase.partial().extend({ id: z.string().min(1).max(40) })
+export const GroupPatchSchema = groupBase.partial().extend({ id: z.string().min(1).max(40), guestVisible: z.boolean().optional() })
+
+// The only change a bill guest may send: mark one open bill paid.
+export const GuestBillPatchSchema = z.strictObject({ id: z.string().min(1).max(40), status: z.literal('paid') })
 
 export function eurosToCents(v: number | null): number | null {
   return v === null ? null : Math.round(v * 100)

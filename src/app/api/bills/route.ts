@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
-import { requireSession } from '@/lib/require-session'
-import { BillPatchSchema, ManualBillSchema, dropUnchanged, eurosToCents, patchToData } from '@/lib/bills/validate'
+import { requireBillsAccess, requireSession } from '@/lib/require-session'
+import { BillPatchSchema, GuestBillPatchSchema, ManualBillSchema, dropUnchanged, eurosToCents, patchToData } from '@/lib/bills/validate'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,20 +16,28 @@ function logErr(where: string, e: unknown) {
 }
 
 export async function GET() {
-  const denied = await requireSession()
+  const { role, denied } = await requireBillsAccess()
   if (denied) return denied
+  const guest = role === 'bills_guest'
+  // A guest sees only open/paid bills of blocks the owner marked guestVisible; never review/ignored or unsorted.
   const [bills, groups] = await Promise.all([
     prisma.bill.findMany({
+      where: guest ? { group: { guestVisible: true }, status: { in: ['new', 'paid'] } } : undefined,
       orderBy: [{ dueDate: { sort: 'asc', nulls: 'last' } }, { createdAt: 'desc' }],
       select: {
         id: true, groupId: true, source: true, status: true, supplier: true, amountCents: true, currency: true,
         dueDate: true, reference: true, iban: true, contractNo: true, serviceAddress: true, payUrl: true,
-        notes: true, subject: true, ignoreReason: true, createdAt: true, file: { select: { billId: true } },
+        notes: !guest, subject: true, ignoreReason: !guest, paidAt: true, createdAt: true, file: { select: { billId: true } },
       },
     }),
-    prisma.billGroup.findMany({ orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] }),
+    prisma.billGroup.findMany({
+      where: guest ? { guestVisible: true } : undefined,
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+      select: { id: true, name: true, address: true, keywords: !guest, sortOrder: true, guestVisible: true },
+    }),
   ])
   return NextResponse.json({
+    role,
     bills: bills.map(({ file, dueDate, ...b }) => ({ ...b, dueDate: iso(dueDate), hasFile: !!file })),
     groups,
   })
@@ -63,9 +71,21 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const denied = await requireSession()
+  const { role, denied } = await requireBillsAccess()
   if (denied) return denied
-  const parsed = BillPatchSchema.safeParse(await req.json().catch(() => null))
+  const body = await req.json().catch(() => null)
+  if (role === 'bills_guest') {
+    // Guest: only {id, status:'paid'}, only an open bill in a guestVisible block. Precondition sits in the WHERE.
+    const g = GuestBillPatchSchema.safeParse(body)
+    if (!g.success) return NextResponse.json({ error: 'Vigane sisend' }, { status: 400 })
+    const n = await prisma.bill.updateMany({
+      where: { id: g.data.id, status: 'new', group: { guestVisible: true } },
+      data: { status: 'paid', paidAt: new Date() },
+    })
+    if (n.count === 0) return NextResponse.json({ error: 'Arvet ei leitud või juba makstud' }, { status: 404 })
+    return NextResponse.json({ ok: true })
+  }
+  const parsed = BillPatchSchema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: 'Vigane sisend' }, { status: 400 })
   try {
     const existing = await prisma.bill.findUnique({
