@@ -1,7 +1,7 @@
 import 'server-only'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
-import type { BillIo, InboundStore } from './inbound'
+import { MAX_PDF_BYTES, type BillIo, type InboundStore } from './inbound'
 
 export const io: BillIo = {
   async pdfToText(data) {
@@ -32,6 +32,39 @@ export const io: BillIo = {
     if (!res.ok) throw new Error(`deepseek ${res.status}`)
     const j = await res.json()
     return String(j?.choices?.[0]?.message?.content ?? '')
+  },
+
+  // Cheapest stable Flash model with PDF input (verified with a live call 2026-11-24: ~830 in / ~160 out tokens per page).
+  async pdfVision(data, { system, user }) {
+    const key = process.env.GEMINI_API_KEY
+    if (!key) throw new Error('GEMINI_API_KEY missing')
+    if (data.length > MAX_PDF_BYTES) throw new Error('pdf too large')
+    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent', {
+      method: 'POST',
+      headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [
+          {
+            role: 'user',
+            parts: [{ inlineData: { mimeType: 'application/pdf', data: data.toString('base64') } }, { text: user }],
+          },
+        ],
+        generationConfig: {
+          temperature: 0,
+          maxOutputTokens: 500,
+          responseMimeType: 'application/json',
+          // No paid thinking: field extraction does not need it.
+          thinkingConfig: { thinkingLevel: 'minimal' },
+        },
+      }),
+      signal: AbortSignal.timeout(30_000),
+    })
+    if (!res.ok) throw new Error(`gemini ${res.status}`)
+    const j = await res.json()
+    const text = j?.candidates?.[0]?.content?.parts?.[0]?.text
+    if (typeof text !== 'string' || !text) throw new Error('gemini empty')
+    return text
   },
 }
 

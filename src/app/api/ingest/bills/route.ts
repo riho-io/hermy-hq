@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { hasIngestSecret } from '@/lib/internal-secret'
-import { processBill } from '@/lib/bills/inbound'
+import { MAX_PDF_BYTES, processBill } from '@/lib/bills/inbound'
 import { io, store } from '@/lib/bills/adapters'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 const MAX_BYTES = 4_400_000
-const MAX_PDF = 3 * 1024 * 1024
+const MAX_PDF = MAX_PDF_BYTES
 
 const Body = z.object({
   messageKey: z.string().regex(/^[a-f0-9]{64}$/),
