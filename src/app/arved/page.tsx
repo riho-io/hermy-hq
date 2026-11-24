@@ -5,12 +5,12 @@ import type { ChangeEvent, FormEvent } from "react";
 import { Plus, RefreshCw, FileText, Trash2, Check, Undo2, AlertTriangle, ChevronRight, ExternalLink } from "lucide-react";
 import { Panel, Pill, Button, Eyebrow, EmptyState } from "@/components/ui/kit";
 
-interface Group { id: string; name: string; address: string | null; keywords: string[]; sortOrder: number }
+interface Group { id: string; name: string; address: string | null; keywords?: string[]; sortOrder: number; guestVisible: boolean }
 interface Bill {
   id: string; groupId: string | null; source: string; status: "new" | "review" | "paid" | "ignored";
   supplier: string | null; amountCents: number | null; currency: string; dueDate: string | null;
   reference: string | null; iban: string | null; payUrl: string | null; notes: string | null;
-  subject: string | null; ignoreReason: string | null; hasFile: boolean;
+  subject: string | null; ignoreReason: string | null; hasFile: boolean; paidAt: string | null;
 }
 
 const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Tallinn" });
@@ -47,6 +47,13 @@ function billRank(b: Bill, todayIso: string): number {
   return n < 0 ? 0 : n === 0 ? 1 : 2;
 }
 const isOverdue = (b: Bill, todayIso: string) => billRank(b, todayIso) === 0;
+// Paid in the last month (paidAt, or due date for old rows without it): stays visible, in green.
+const RECENT_PAID_DAYS = 31;
+const isRecentPaid = (b: Bill, todayIso: string) => {
+  if (b.status !== "paid") return false;
+  const d = b.paidAt ? new Date(b.paidAt).toLocaleDateString("en-CA", { timeZone: "Europe/Tallinn" }) : b.dueDate;
+  return d !== null && days(d, todayIso) <= RECENT_PAID_DAYS;
+};
 
 function sortBills(bills: Bill[], todayIso: string): Bill[] {
   return [...bills].sort((a, b) => {
@@ -96,6 +103,9 @@ export default function ArvedPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showPaid, setShowPaid] = useState(false);
+  // "bills_guest" (BILLS_GUEST_EMAILS) sees shared blocks and only the "Makstud" button. The API enforces it.
+  const [role, setRole] = useState<"owner" | "bills_guest" | null>(null);
+  const guest = role === "bills_guest";
   const [adding, setAdding] = useState(false);
   const [addingGroup, setAddingGroup] = useState(false);
 
@@ -110,6 +120,7 @@ export default function ArvedPage() {
       const j = await res.json();
       setBills(j.bills);
       setGroups(j.groups);
+      setRole(j.role ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Laadimine ebaõnnestus");
     } finally {
@@ -161,7 +172,7 @@ export default function ArvedPage() {
   const todayIso = today();
   const review = sortBills(bills.filter((b) => b.status === "review"), todayIso);
   const blocks = useMemo(() => {
-    const list = bills.filter((b) => b.status !== "review" && b.status !== "ignored" && (showPaid || b.status !== "paid"));
+    const list = bills.filter((b) => b.status !== "review" && b.status !== "ignored" && (showPaid || b.status !== "paid" || isRecentPaid(b, todayIso)));
     const byGroup = (id: string | null) => sortBills(list.filter((b) => b.groupId === id), todayIso);
     return [...groups.map((g) => ({ key: g.id, group: g as Group | null, items: byGroup(g.id) })),
             { key: "none", group: null as Group | null, items: byGroup(null) }];
@@ -196,11 +207,11 @@ export default function ArvedPage() {
     const host = b.payUrl ? payHost(b.payUrl) : null;
     const name = b.supplier ?? b.subject ?? "(nimeta)";
     const rank = billRank(b, todayIso);
-    const rowEdge = rank === 0 ? "var(--down)" : rank === 1 ? "var(--warn)" : null;
-    const rowBg = rank === 0 ? "color-mix(in srgb, var(--down) 12%, transparent)" : rank === 1 ? "color-mix(in srgb, var(--warn) 10%, transparent)" : "transparent";
-    const rowHover = rank === 0 ? "color-mix(in srgb, var(--down) 20%, transparent)" : rank === 1 ? "color-mix(in srgb, var(--warn) 18%, transparent)" : `color-mix(in srgb, ${tint} 6%, transparent)`;
+    const rowEdge = paid ? "var(--up)" : rank === 0 ? "var(--down)" : rank === 1 ? "var(--warn)" : null;
+    const rowBg = paid ? "color-mix(in srgb, var(--up) 12%, transparent)" : rank === 0 ? "color-mix(in srgb, var(--down) 12%, transparent)" : rank === 1 ? "color-mix(in srgb, var(--warn) 10%, transparent)" : "transparent";
+    const rowHover = paid ? "color-mix(in srgb, var(--up) 18%, transparent)" : rank === 0 ? "color-mix(in srgb, var(--down) 20%, transparent)" : rank === 1 ? "color-mix(in srgb, var(--warn) 18%, transparent)" : `color-mix(in srgb, ${tint} 6%, transparent)`;
     return (
-      <div key={b.id} style={{ "--row": rowBg, "--row-h": rowHover, ...(rowEdge ? { boxShadow: `inset 3px 0 0 ${rowEdge}` } : {}) } as React.CSSProperties} className={`${ROW_GRID} py-3 border-t border-[var(--line-strong)] first:border-t-0 transition-colors bg-[var(--row)] hover:bg-[var(--row-h)] ${paid ? "opacity-[0.55]" : ""}`}>
+      <div key={b.id} style={{ "--row": rowBg, "--row-h": rowHover, ...(rowEdge ? { boxShadow: `inset 3px 0 0 ${rowEdge}` } : {}) } as React.CSSProperties} className={`${ROW_GRID} py-3 border-t border-[var(--line-strong)] first:border-t-0 transition-colors bg-[var(--row)] hover:bg-[var(--row-h)]`}>
         <div className="min-w-0">
           <div className="text-[14px] text-[var(--text)]">{b.supplier ?? b.subject ?? "(nimeta)"}</div>
           <div className="text-[12px] text-[var(--text-2)]">
@@ -211,10 +222,10 @@ export default function ArvedPage() {
           <span className="text-[12.5px] text-[var(--text-2)]">{fmtDate(b.dueDate)}</span>
           <Pill tone={u.tone}>{u.label}</Pill>
         </div>
-        <div className={`num text-[14px] ${rank === 0 ? "text-[var(--down)] font-medium" : "text-[var(--text)]"} text-right col-start-2 row-start-1 sm:col-start-3 sm:row-start-auto ${paid ? "line-through" : ""}`}>{money(b.amountCents, b.currency)}</div>
+        <div className={`num text-[14px] ${paid ? "text-[var(--up)]" : rank === 0 ? "text-[var(--down)] font-medium" : "text-[var(--text)]"} text-right col-start-2 row-start-1 sm:col-start-3 sm:row-start-auto`}>{money(b.amountCents, b.currency)}</div>
         {/* Fixed slots (select · PDF · link · Makstud · delete) so every row's buttons line up; empty slots keep their width. */}
         <div className="col-span-2 row-start-3 sm:col-span-1 sm:col-start-4 sm:row-start-auto grid grid-cols-[minmax(0,1fr)_32px_32px_auto_32px] items-center gap-1.5">
-        <select
+        {guest ? <span aria-hidden /> : <select
           aria-label={`Plokk: ${name}`}
           value={b.groupId ?? ""}
           onChange={(e) => act(() => call("PATCH", "/api/bills", { id: b.id, groupId: e.target.value || null }))}
@@ -222,7 +233,7 @@ export default function ArvedPage() {
         >
           <option value="">Sorteerimata</option>
           {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-        </select>
+        </select>}
         {b.hasFile ? (
           <a href={`/api/bills/file?id=${encodeURIComponent(b.id)}`} target="_blank" rel="noopener noreferrer" aria-label={`Ava PDF: ${name}`} title="Ava PDF" className="btn-ghost inline-flex w-8 h-8 items-center justify-center">
             <FileText className="w-4 h-4" />
@@ -233,7 +244,9 @@ export default function ArvedPage() {
             <ExternalLink className="w-4 h-4" />
           </a>
         ) : <span aria-hidden />}
-        {b.status === "paid" ? (
+        {b.status === "paid" && guest ? (
+          <span className="inline-flex items-center gap-1.5 text-[13px] text-[var(--up)] justify-self-end"><Check className="w-4 h-4" /> Makstud</span>
+        ) : b.status === "paid" ? (
           <button type="button" aria-label={`Taasta: ${name}`} className="btn-ghost w-8 h-8 inline-flex items-center justify-center justify-self-end"
             onClick={() => act(() => call("PATCH", "/api/bills", { id: b.id, status: "new" }))}><Undo2 className="w-4 h-4" /></button>
         ) : (
@@ -243,10 +256,10 @@ export default function ArvedPage() {
             <Check className="w-4 h-4" /> Makstud
           </button>
         )}
-        <button type="button" aria-label={`Kustuta: ${name}`} className="btn-ghost w-8 h-8 inline-flex items-center justify-center"
+        {guest ? <span aria-hidden /> : <button type="button" aria-label={`Kustuta: ${name}`} className="btn-ghost w-8 h-8 inline-flex items-center justify-center"
           onClick={() => { if (window.confirm(`Kustutada arve "${b.supplier ?? b.subject ?? ""}"?`)) act(() => call("DELETE", `/api/bills?id=${encodeURIComponent(b.id)}`)); }}>
           <Trash2 className="w-4 h-4" />
-        </button>
+        </button>}
         </div>
       </div>
     );
@@ -296,10 +309,10 @@ export default function ArvedPage() {
             {openLabel(bills).text} · {review.length} vajab ülevaatust
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        {!guest && <div className="flex items-center gap-2">
           <button type="button" onClick={syncMail} disabled={syncing !== null} aria-label="Too uued arved meilidest" title="Too uued arved meilidest" className="btn-ghost inline-flex items-center justify-center w-9 h-9 disabled:opacity-60"><RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} /></button>
           <Button variant="primary" onClick={() => setAdding((v) => !v)}><Plus className="w-4 h-4" /> Lisa arve</Button>
-        </div>
+        </div>}
       </div>
 
       {syncing && <div role="status" className="mb-4 text-[13px] text-[var(--text-3)]">{syncing}</div>}
@@ -341,9 +354,9 @@ export default function ArvedPage() {
 
       <div className="mt-6 flex items-center gap-3">
         <button type="button" onClick={() => setShowPaid((v) => !v)} className="text-[12.5px] text-[var(--text-3)] underline">
-          {showPaid ? "Peida makstud" : "Näita makstud"}
+          {showPaid ? "Peida vanemad makstud" : "Näita vanemad makstud"}
         </button>
-        <button type="button" onClick={() => setAddingGroup((v) => !v)} className="text-[12.5px] text-[var(--text-3)] underline">Uus plokk</button>
+        {!guest && <button type="button" onClick={() => setAddingGroup((v) => !v)} className="text-[12.5px] text-[var(--text-3)] underline">Uus plokk</button>}
       </div>
       {addingGroup && <AddGroup onDone={() => { setAddingGroup(false); load(); }} onError={setError} />}
 
@@ -369,7 +382,14 @@ export default function ArvedPage() {
                       {late > 0 && <Pill tone="down">{late} hilinenud</Pill>}
                       <span>{ol.text} · <span style={{ color }}>{money(sum, "EUR")}</span></span>
                     </div>
-                    {group && (
+                    {group && !guest && (
+                      <label className="flex items-center gap-1.5 text-[12px] text-[var(--text-3)] cursor-pointer">
+                        <input type="checkbox" checked={group.guestVisible}
+                          onChange={(e) => act(() => call("PATCH", "/api/bill-groups", { id: group.id, guestVisible: e.target.checked }))} />
+                        Kersti näeb
+                      </label>
+                    )}
+                    {group && !guest && (
                       <button type="button" aria-label={`Kustuta plokk: ${group.name}`} className="text-[12px] text-[var(--text-3)] underline"
                         onClick={() => { if (window.confirm(`Kustutada plokk "${group.name}"? Arved jäävad alles (Sorteerimata).`)) act(() => call("DELETE", `/api/bill-groups?id=${encodeURIComponent(group.id)}`)); }}>
                         Kustuta plokk

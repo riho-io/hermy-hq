@@ -37,6 +37,7 @@ export async function PATCH(req: NextRequest) {
       ...(rest.address !== undefined && { address: rest.address }),
       ...(rest.keywords !== undefined && { keywords: rest.keywords }),
       ...(rest.sortOrder !== undefined && { sortOrder: rest.sortOrder }),
+      ...(rest.guestVisible !== undefined && { guestVisible: rest.guestVisible }),
     },
   })
   if (n.count === 0) return NextResponse.json({ error: 'Plokki ei leitud' }, { status: 404 })

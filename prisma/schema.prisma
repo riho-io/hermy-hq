@@ -716,6 +716,8 @@ model BillGroup {
   address   String?
   keywords  String[] @default([])
   sortOrder Int      @default(0) @map("sort_order")
+  // Bill guests (BILLS_GUEST_EMAILS) see and can mark paid only the bills of blocks where this is true.
+  guestVisible Boolean @default(false) @map("guest_visible")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   bills     Bill[]
 
