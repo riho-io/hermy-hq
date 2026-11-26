@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { ManualBillSchema, BillPatchSchema, GroupSchema, GroupPatchSchema, eurosToCents, patchToData, dropUnchanged } from './validate'
+import { ManualBillSchema, BillPatchSchema, BillRestoreSchema, GuestBillPatchSchema, GroupSchema, GroupPatchSchema, eurosToCents, patchToData, dropUnchanged } from './validate'
 
 test('manual bill: minimal valid input', () => {
   const r = ManualBillSchema.safeParse({ supplier: 'Elektrimüüja', amount: 12.5, dueDate: '2026-12-05' })
@@ -68,4 +68,10 @@ test('dropUnchanged: changed values and null stay', () => {
 })
 test('dropUnchanged: clearing an already empty dueDate is a no-op', () => {
   assert.deepEqual(dropUnchanged({ id: 'x', dueDate: null }, { dueDate: null, status: 'new' }), { id: 'x' })
+})
+test('restore: only {id, restore: true}; the guest schema never accepts it', () => {
+  assert.equal(BillRestoreSchema.safeParse({ id: 'a', restore: true }).success, true)
+  assert.equal(BillRestoreSchema.safeParse({ id: 'a', restore: false }).success, false)
+  assert.equal(BillRestoreSchema.safeParse({ id: 'a', restore: true, status: 'new' }).success, false)
+  assert.equal(GuestBillPatchSchema.safeParse({ id: 'a', restore: true }).success, false)
 })

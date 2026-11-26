@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Plus, RefreshCw, FileText, Trash2, Check, Undo2, AlertTriangle, ChevronRight, ExternalLink, MoreHorizontal } from "lucide-react";
+import { Plus, RefreshCw, FileText, Trash2, Check, Undo2, AlertTriangle, ChevronRight, ExternalLink, MoreHorizontal, Pencil } from "lucide-react";
 import { Panel, Button, Eyebrow, EmptyState } from "@/components/ui/kit";
 
 interface Group { id: string; name: string; address: string | null; keywords?: string[]; sortOrder: number; guestVisible: boolean }
@@ -11,7 +11,7 @@ interface Bill {
   id: string; groupId: string | null; source: string; status: "new" | "review" | "paid" | "ignored";
   supplier: string | null; amountCents: number | null; currency: string; dueDate: string | null;
   reference: string | null; iban: string | null; payUrl: string | null; notes: string | null;
-  subject: string | null; ignoreReason: string | null; hasFile: boolean; paidAt: string | null;
+  subject: string | null; ignoreReason: string | null; hasFile: boolean; paidAt: string | null; deletedAt?: string | null;
 }
 
 const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Tallinn" });
@@ -84,6 +84,8 @@ const COLS = "sm:grid-cols-[minmax(0,1fr)_210px_120px_148px]";
 const ROW_GRID = `grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 items-center px-3 ${COLS} sm:gap-x-4`;
 // Block colour is only a small solid dot in front of the name; surfaces stay neutral.
 const GROUP_COLORS = ["var(--accent)", "var(--up)", "var(--text-2)"];
+// Unticked blocks (block keys), per browser. Hidden ones are stored so a new block shows up by default.
+const HIDDEN_BLOCKS_KEY = "arved.hiddenBlocks";
 const ROW_HOVER = "hover:bg-[var(--surface-2)]";
 const MENU_ITEM = "flex w-full items-center gap-2.5 rounded-md px-2.5 h-9 text-left text-[13px] whitespace-nowrap transition-colors hover:bg-[var(--surface-3)] focus-visible:bg-[var(--surface-3)]";
 
@@ -160,6 +162,8 @@ async function call(method: string, url: string, body?: unknown) {
 
 export default function ArvedPage() {
   const [bills, setBills] = useState<Bill[]>([]);
+  const [deleted, setDeleted] = useState<Bill[]>([]); // newest deletion first; never in the sums or blocks
+  const [showDeleted, setShowDeleted] = useState(false);
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -168,10 +172,26 @@ export default function ArvedPage() {
   const [role, setRole] = useState<"owner" | "bills_guest" | null>(null);
   const guest = role === "bills_guest";
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null); // bill id shown as a form
   const [addingGroup, setAddingGroup] = useState(false);
 
   const [syncing, setSyncing] = useState<string | null>(null);
   const [open, setOpen] = useState<Set<string>>(new Set());
+
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  // Read after mount (not in useState) so the server and first client render match.
+  useEffect(() => {
+    try {
+      const v: unknown = JSON.parse(localStorage.getItem(HIDDEN_BLOCKS_KEY) ?? "[]");
+      if (Array.isArray(v)) setHidden(new Set(v.filter((x): x is string => typeof x === "string")));
+    } catch { /* storage blocked or bad value: show everything */ }
+  }, []);
+  const toggleBlock = (key: string) => {
+    const next = new Set(hidden);
+    if (!next.delete(key)) next.add(key);
+    setHidden(next);
+    try { localStorage.setItem(HIDDEN_BLOCKS_KEY, JSON.stringify([...next])); } catch { /* choice lasts until reload */ }
+  };
 
   const load = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
@@ -179,7 +199,9 @@ export default function ArvedPage() {
       const res = await fetch("/api/bills", { cache: "no-store" });
       if (!res.ok) throw new Error(`Viga ${res.status}`);
       const j = await res.json();
-      setBills(j.bills);
+      const all = j.bills as Bill[];
+      setBills(all.filter((b) => !b.deletedAt));
+      setDeleted(all.filter((b) => b.deletedAt).sort((a, b) => (b.deletedAt ?? "").localeCompare(a.deletedAt ?? "")));
       setGroups(j.groups);
       setRole(j.role ?? null);
     } catch (e) {
@@ -246,8 +268,9 @@ export default function ArvedPage() {
     return { eur, text: `${eur.length} maksmata${other > 0 ? ` + ${other} muus vääringus` : ""}` };
   };
 
-  // All blocks together: open EUR bills (status "new"); review rows are not counted until fixed.
-  const allOpen = openLabel(bills).eur;
+  // Ticked blocks together: open EUR bills (status "new"); review rows are not counted until fixed.
+  const shownBills = bills.filter((b) => !hidden.has(b.groupId ?? "none"));
+  const allOpen = openLabel(shownBills).eur;
   const total = {
     count: allOpen.length,
     sum: allOpen.reduce((s, b) => s + (b.amountCents ?? 0), 0),
@@ -273,6 +296,14 @@ export default function ArvedPage() {
   );
 
   const renderRow = (b: Bill) => {
+    if (editing === b.id && !guest) {
+      return (
+        <div key={b.id} className="px-3 pt-3 border-t border-[var(--line)] first:border-t-0">
+          <BillForm bill={b} groups={groups} onError={setError} onCancel={() => setEditing(null)}
+            onDone={() => { setEditing(null); setError(null); load(true); }} />
+        </div>
+      );
+    }
     const u = urgency(b);
     const paid = b.status === "paid";
     const host = b.payUrl ? payHost(b.payUrl) : null;
@@ -323,6 +354,11 @@ export default function ArvedPage() {
                       </select>
                     </label>
                   )}
+                  {!guest && (
+                    <button type="button" aria-label={`Muuda: ${name}`} className={`${MENU_ITEM} text-[var(--text)]`} onClick={() => setEditing(b.id)}>
+                      <Pencil className="w-4 h-4 text-[var(--text-2)]" /> Muuda
+                    </button>
+                  )}
                   {b.hasFile && (
                     <a href={`/api/bills/file?id=${encodeURIComponent(b.id)}`} target="_blank" rel="noopener noreferrer" aria-label={`Ava PDF: ${name}`} className={`${MENU_ITEM} text-[var(--text)]`}>
                       <FileText className="w-4 h-4 text-[var(--text-2)]" /> Ava PDF
@@ -335,7 +371,7 @@ export default function ArvedPage() {
                   )}
                   {!guest && (
                     <button type="button" aria-label={`Kustuta: ${name}`} className={`${MENU_ITEM} text-[var(--bill-late)]`}
-                      onClick={() => { if (window.confirm(`Kustutada arve "${b.supplier ?? b.subject ?? ""}"?`)) act(() => call("DELETE", `/api/bills?id=${encodeURIComponent(b.id)}`)); }}>
+                      onClick={() => { if (window.confirm(`Kustutada arve "${b.supplier ?? b.subject ?? ""}"? Saad selle taastada nupuga „Kustutatud“.`)) act(() => call("DELETE", `/api/bills?id=${encodeURIComponent(b.id)}`)); }}>
                       <Trash2 className="w-4 h-4" /> Kustuta arve
                     </button>
                   )}
@@ -385,7 +421,7 @@ export default function ArvedPage() {
           <Eyebrow>Isiklikud</Eyebrow>
           <h1 className="mt-2.5 text-[40px] font-semibold tracking-[-0.025em] leading-none text-[var(--text)]">Arved</h1>
           <p className="text-[13.5px] text-[var(--text-2)] mt-2">
-            {openLabel(bills).text} · {review.length} vajab ülevaatust
+            {openLabel(shownBills).text} · {review.length} vajab ülevaatust
           </p>
         </div>
         {!guest && <div className="flex items-center gap-2">
@@ -398,7 +434,7 @@ export default function ArvedPage() {
       {error && <div role="alert" className="mb-4 rounded-md border border-[var(--bill-late)] px-3 py-2 text-[13px] text-[var(--bill-late)]">{error}</div>}
 
       {adding && (
-        <AddBill groups={groups} onDone={() => { setAdding(false); load(); }} onError={setError} />
+        <BillForm groups={groups} onDone={() => { setAdding(false); load(); }} onError={setError} />
       )}
 
       {review.length > 0 && (
@@ -407,7 +443,7 @@ export default function ArvedPage() {
             <AlertTriangle aria-hidden className="w-4 h-4 text-[var(--warn)]" />
             <h2 className="text-[17px] font-semibold text-[var(--text)]">Vaata üle <span className="num font-normal text-[var(--text-2)]">{review.length}</span></h2>
           </div>
-          <p className="px-3 mt-1 mb-4 max-w-[70ch] text-[12.5px] text-[var(--text-2)]">Summa või tähtaeg puudub või lugemine ebaõnnestus. Parandamiseks kustuta ja lisa käsitsi, või jäta; tähtajaga ridadele tuleb meeldetuletus ka siin.</p>
+          <p className="px-3 mt-1 mb-4 max-w-[70ch] text-[12.5px] text-[var(--text-2)]">Summa või tähtaeg puudub või lugemine ebaõnnestus. Parandamiseks vali „⋯“ ja „Muuda“, või jäta; tähtajaga ridadele tuleb meeldetuletus ka siin.</p>
           <RowHead />
           {review.map((b) => renderRow(b))}
         </Panel></div>
@@ -422,30 +458,79 @@ export default function ArvedPage() {
             <span className="text-[var(--text-2)] whitespace-nowrap">· {total.count} {total.count === 1 ? "arve" : "arvet"}</span>
             {total.late > 0 && <span className="text-[var(--bill-late)] whitespace-nowrap">· {total.late} hilinenud</span>}
           </div>
-        ) : <span className="text-[14px] text-[var(--text-2)]">Kõik makstud</span>}
-        <nav aria-label="Plokkide ülevaade" className="flex flex-wrap items-center gap-x-1 gap-y-1 -mx-2">
-          {overview.map((o) => (
-            <a key={o.id} href={`#plokk-${o.id}`} className="inline-flex items-center gap-2 h-8 px-2 rounded-md text-[13px] text-[var(--text-2)] whitespace-nowrap transition-colors hover:text-[var(--text)] hover:bg-[var(--surface-2)]">
-              <span aria-hidden className="w-2 h-2 rounded-full" style={{ background: o.color }} />
-              {o.name}
-            </a>
-          ))}
-        </nav>
+        ) : <span className="text-[14px] text-[var(--text-2)]">{bills.length > 0 && shownBills.length === 0 ? "Midagi pole valitud" : "Kõik makstud"}</span>}
+        <div role="group" aria-label="Näidatavad plokid" className="flex flex-wrap items-center gap-x-1 gap-y-1 -mx-2">
+          {overview.map((o) => {
+            const chip = "inline-flex items-center gap-2 h-8 px-2 rounded-md text-[13px] text-[var(--text-2)] whitespace-nowrap transition-colors hover:text-[var(--text)] hover:bg-[var(--surface-2)]";
+            const dot = <span aria-hidden className="w-2 h-2 rounded-full" style={{ background: o.color }} />;
+            // "Vaata üle" is not a block: it stays a jump link and is always shown.
+            if (o.id === "review") return <a key={o.id} href="#plokk-review" className={chip}>{dot}{o.name}</a>;
+            return (
+              <label key={o.id} className={`${chip} cursor-pointer`}>
+                <input type="checkbox" checked={!hidden.has(o.id)} onChange={() => toggleBlock(o.id)} className="accent-[var(--accent)]" />
+                {dot}
+                {o.name}
+              </label>
+            );
+          })}
+        </div>
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <button type="button" aria-pressed={showPaid} onClick={() => setShowPaid((v) => !v)} className="btn-ghost inline-flex items-center h-8 px-3 text-[12.5px]">
           {showPaid ? "Peida vanemad makstud" : "Näita vanemad makstud"}
         </button>
+        {!guest && (
+          <button type="button" aria-expanded={showDeleted} onClick={() => setShowDeleted((v) => !v)} className="btn-ghost inline-flex items-center gap-1.5 h-8 px-3 text-[12.5px]">
+            <Trash2 className="w-3.5 h-3.5" /> Kustutatud ({deleted.length})
+          </button>
+        )}
         {!guest && <button type="button" onClick={() => setAddingGroup((v) => !v)} className="btn-ghost inline-flex items-center gap-1.5 h-8 px-3 text-[12.5px]"><Plus className="w-3.5 h-3.5" /> Uus plokk</button>}
       </div>
       {addingGroup && <AddGroup onDone={() => { setAddingGroup(false); load(); }} onError={setError} />}
 
 
+      {showDeleted && !guest && (
+        <section aria-label="Kustutatud arved" className="mb-6 rounded-[var(--r-lg)] border border-[var(--line)] px-5 py-4">
+          <h2 className="text-[15px] font-semibold text-[var(--text)]">Kustutatud arved</h2>
+          {deleted.length === 0 ? (
+            <p className="mt-2 text-[12.5px] text-[var(--text-2)]">Kustutatud arveid pole.</p>
+          ) : (
+            <ul className="mt-2">
+              {deleted.map((b) => {
+                const name = b.supplier ?? b.subject ?? "(nimeta)";
+                return (
+                  <li key={b.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2.5 border-t border-[var(--line)] first:border-t-0">
+                    <div className="min-w-0 flex-1 basis-[180px]">
+                      <div className="text-[14px] text-[var(--text)] truncate">{name}</div>
+                      <div className="text-[12px] text-[var(--text-2)] truncate">
+                        {[groups.find((g) => g.id === b.groupId)?.name ?? "Sorteerimata", `tähtaeg ${fmtDate(b.dueDate)}`,
+                          b.status === "paid" && "makstud", `kustutatud ${new Date(b.deletedAt!).toLocaleDateString("et-EE", { timeZone: "Europe/Tallinn" })}`].filter(Boolean).join(" · ")}
+                      </div>
+                    </div>
+                    <span className="num text-[13.5px] text-[var(--text)] whitespace-nowrap">
+                      {money(b.amountCents, b.currency)}
+                    </span>
+                    <button type="button" aria-label={`Taasta: ${name}`} className="btn-ghost inline-flex items-center gap-1.5 h-8 px-3 text-[12.5px]"
+                      onClick={() => act(() => call("PATCH", "/api/bills", { id: b.id, restore: true }))}>
+                      <Undo2 className="w-3.5 h-3.5" /> Taasta
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+      )}
+
       <div className="grid gap-6">
         {loading && bills.length === 0 && <div role="status" className="text-[13px] text-[var(--text-2)]">Laen…</div>}
+        {!loading && groups.length > 0 && blocks.every((bl) => hidden.has(bl.key) || (!bl.group && bl.items.length === 0)) && (
+          <div role="status" className="text-[13px] text-[var(--text-2)]">Ühtegi plokki pole valitud. Märgi ülal vähemalt üks linnuke.</div>
+        )}
         {blocks.map(({ key, group, items }, i) => {
           if (!group && items.length === 0 && groups.length > 0) return null;
+          if (hidden.has(key)) return null;
           const ol = openLabel(items);
           const late = items.filter((b) => isOverdue(b, todayIso)).length;
           const sum = ol.eur.reduce((s, b) => s + (b.amountCents ?? 0), 0);
@@ -515,8 +600,17 @@ export default function ArvedPage() {
   );
 }
 
-function AddBill({ groups, onDone, onError }: { groups: Group[]; onDone: () => void; onError: (m: string) => void }) {
-  const [f, setF] = useState({ supplier: "", amount: "", dueDate: "", groupId: "", reference: "", notes: "" });
+// Adds a bill, or edits `bill` when given.
+function BillForm({ bill, groups, onDone, onError, onCancel }: { bill?: Bill; groups: Group[]; onDone: () => void; onError: (m: string) => void; onCancel?: () => void }) {
+  const [f, setF] = useState({
+    supplier: bill?.supplier ?? "",
+    amount: bill?.amountCents == null ? "" : (bill.amountCents / 100).toFixed(2).replace(".", ","),
+    dueDate: bill?.dueDate ?? "",
+    groupId: bill?.groupId ?? "",
+    reference: bill?.reference ?? "",
+    iban: bill?.iban ?? "",
+    notes: bill?.notes ?? "",
+  });
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof f) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const value = e.target.value;
@@ -533,10 +627,17 @@ function AddBill({ groups, onDone, onError }: { groups: Group[]; onDone: () => v
     }
     setBusy(true);
     try {
-      await call("POST", "/api/bills", {
+      const fields = {
         supplier, amount, dueDate: f.dueDate || null, groupId: f.groupId || null,
-        reference: f.reference || null, notes: f.notes || null,
-      });
+        reference: f.reference || null, iban: f.iban || null, notes: f.notes || null,
+      };
+      if (bill) {
+        // A "Vaata üle" bill that now has both amount and due date becomes an ordinary open bill.
+        const fixed = bill.status === "review" && amount !== null && f.dueDate !== "";
+        await call("PATCH", "/api/bills", { id: bill.id, ...fields, ...(fixed ? { status: "new" } : {}) });
+      } else {
+        await call("POST", "/api/bills", fields);
+      }
       onDone();
     } catch (err) { onError(err instanceof Error ? err.message : "Viga"); }
     finally { setBusy(false); }
@@ -552,8 +653,12 @@ function AddBill({ groups, onDone, onError }: { groups: Group[]; onDone: () => v
         {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
       </select>
       <input aria-label="Viitenumber" className={inp} placeholder="Viitenumber" value={f.reference} onChange={set("reference")} maxLength={60} />
-      <input aria-label="Märkus" className={inp} placeholder="Märkus" value={f.notes} onChange={set("notes")} maxLength={1000} />
-      <div className="sm:col-span-3"><Button variant="primary" type="submit" disabled={busy}>Salvesta</Button></div>
+      <input aria-label="IBAN" className={inp} placeholder="IBAN" value={f.iban} onChange={set("iban")} maxLength={40} />
+      <input aria-label="Märkus" className={`${inp} sm:col-span-3`} placeholder="Märkus" value={f.notes} onChange={set("notes")} maxLength={1000} />
+      <div className="sm:col-span-3 flex items-center gap-2">
+        <Button variant="primary" type="submit" disabled={busy}>Salvesta</Button>
+        {onCancel && <button type="button" onClick={onCancel} className="btn-ghost inline-flex items-center h-9 px-3 text-[13px]">Tühista</button>}
+      </div>
     </form>
   );
 }

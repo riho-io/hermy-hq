@@ -61,6 +61,9 @@ export const GroupPatchSchema = groupBase.partial().extend({ id: z.string().min(
 // The only change a bill guest may send: mark one open bill paid.
 export const GuestBillPatchSchema = z.strictObject({ id: z.string().min(1).max(40), status: z.literal('paid') })
 
+// Owner only: bring back a deleted bill. Status and paidAt are untouched by delete, so nothing else changes.
+export const BillRestoreSchema = z.strictObject({ id: z.string().min(1).max(40), restore: z.literal(true) })
+
 export function eurosToCents(v: number | null): number | null {
   return v === null ? null : Math.round(v * 100)
 }
