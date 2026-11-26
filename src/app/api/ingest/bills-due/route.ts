@@ -19,6 +19,7 @@ export async function GET(req: Request) {
     const rows = await prisma.bill.findMany({
       where: {
         status: { in: ['new', 'review'] },
+        deletedAt: null,
         // Only bills that can still produce a notice: due/overdue without the due-day message, or within 3 days without the d3 one.
         // Server-side dueNotices stays authoritative.
         OR: [

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { requireBillsAccess, requireSession } from '@/lib/require-session'
-import { BillPatchSchema, GuestBillPatchSchema, ManualBillSchema, dropUnchanged, eurosToCents, patchToData } from '@/lib/bills/validate'
+import { BillPatchSchema, BillRestoreSchema, GuestBillPatchSchema, ManualBillSchema, dropUnchanged, eurosToCents, patchToData } from '@/lib/bills/validate'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,12 +22,12 @@ export async function GET() {
   // A guest sees only open/paid bills of blocks the owner marked guestVisible; never review/ignored or unsorted.
   const [bills, groups] = await Promise.all([
     prisma.bill.findMany({
-      where: guest ? { group: { guestVisible: true }, status: { in: ['new', 'paid'] } } : undefined,
+      where: guest ? { group: { guestVisible: true }, status: { in: ['new', 'paid'] }, deletedAt: null } : undefined,
       orderBy: [{ dueDate: { sort: 'asc', nulls: 'last' } }, { createdAt: 'desc' }],
       select: {
         id: true, groupId: true, source: true, status: true, supplier: true, amountCents: true, currency: true,
         dueDate: true, reference: true, iban: true, contractNo: true, serviceAddress: true, payUrl: true,
-        notes: !guest, subject: true, ignoreReason: !guest, paidAt: true, createdAt: true, file: { select: { billId: true } },
+        notes: !guest, subject: true, ignoreReason: !guest, paidAt: true, createdAt: true, deletedAt: true, file: { select: { billId: true } },
       },
     }),
     prisma.billGroup.findMany({
@@ -79,11 +79,22 @@ export async function PATCH(req: NextRequest) {
     const g = GuestBillPatchSchema.safeParse(body)
     if (!g.success) return NextResponse.json({ error: 'Vigane sisend' }, { status: 400 })
     const n = await prisma.bill.updateMany({
-      where: { id: g.data.id, status: 'new', group: { guestVisible: true } },
+      where: { id: g.data.id, status: 'new', deletedAt: null, group: { guestVisible: true } },
       data: { status: 'paid', paidAt: new Date() },
     })
     if (n.count === 0) return NextResponse.json({ error: 'Arvet ei leitud või juba makstud' }, { status: 404 })
     return NextResponse.json({ ok: true })
+  }
+  const restore = BillRestoreSchema.safeParse(body)
+  if (restore.success) {
+    try {
+      const n = await prisma.bill.updateMany({ where: { id: restore.data.id, deletedAt: { not: null } }, data: { deletedAt: null } })
+      if (n.count === 0) return NextResponse.json({ error: 'Arvet ei leitud või juba taastatud' }, { status: 404 })
+      return NextResponse.json({ ok: true })
+    } catch (e) {
+      logErr('bills restore failed', e)
+      return NextResponse.json({ error: 'Taastamine ebaõnnestus' }, { status: 500 })
+    }
   }
   const parsed = BillPatchSchema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: 'Vigane sisend' }, { status: 400 })
@@ -109,6 +120,7 @@ export async function DELETE(req: NextRequest) {
   if (denied) return denied
   const id = req.nextUrl.searchParams.get('id')
   if (!id || id.length > 40) return NextResponse.json({ error: 'id puudub' }, { status: 400 })
-  await prisma.bill.deleteMany({ where: { id } })
+  // Soft delete, so a wrong click can be undone. The row also keeps its emailId, so the mail is not imported again.
+  await prisma.bill.updateMany({ where: { id, deletedAt: null }, data: { deletedAt: new Date() } })
   return NextResponse.json({ ok: true })
 }

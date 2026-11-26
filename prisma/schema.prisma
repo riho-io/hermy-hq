@@ -748,6 +748,8 @@ model Bill {
   paidAt          DateTime?  @map("paid_at") @db.Timestamptz(6)
   remind3SentAt   DateTime?  @map("remind3_sent_at") @db.Timestamptz(6)
   remindDueSentAt DateTime?  @map("remind_due_sent_at") @db.Timestamptz(6)
+  // Soft delete: set = hidden from the lists and reminders, can be restored on /arved.
+  deletedAt       DateTime?  @map("deleted_at") @db.Timestamptz(6)
   createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
   file            BillFile?
